@@ -82,9 +82,19 @@ step_tailscale_up() {
     fi
     print_info "Running 'tailscale up' — this opens a URL to authorize in a browser"
     tailscale up
+    if ! tailscale ip -4 &> /dev/null; then
+        print_error "tailscale up returned but no tailnet IP is assigned — not joined."
+        print_error "Open the URL above and approve it (or check for pending admin approval), then re-run."
+        exit 1
+    fi
+    print_info "Tailscale joined: $(tailscale ip -4)"
 }
 
 step_derp_setup() {
+    if ! tailscale ip -4 &> /dev/null; then
+        print_error "No tailnet IP assigned — tailscale-up must succeed before derp-setup runs."
+        exit 1
+    fi
     local args=(--prepare)
     [ -n "$DOMAIN" ] && args+=(--domain "$DOMAIN")
     [ -n "$EMAIL" ] && args+=(--email "$EMAIL")

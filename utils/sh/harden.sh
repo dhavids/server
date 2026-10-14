@@ -138,7 +138,10 @@ step_ssh_harden() {
         print_warn "Key login for $ADMIN_USER not confirmed"
     fi
 
-    confirm "Restart SSH now to apply PermitRootLogin/PasswordAuthentication no? Open a second terminal and confirm $ADMIN_USER@<pi-ip> still logs in with a key before answering yes." \
+    command -v curl &> /dev/null || { apt-get update; apt-get install -y curl; }
+    local host_ip
+    host_ip="$(curl -4 -s ifconfig.me || echo '<could-not-detect-run-curl -4 ifconfig.me-manually>')"
+    confirm "Restart SSH now to apply PermitRootLogin/PasswordAuthentication no? Open a second terminal and confirm $ADMIN_USER@$host_ip still logs in with a key before answering yes." \
         || { print_warn "sshd_config edited. SSH not restarted."; return; }
 
     systemctl restart ssh

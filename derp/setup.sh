@@ -28,11 +28,11 @@ ACTIVATE_FLAG="0"
 DOMAIN_OVERRIDE="0"
 DERP_HOST_OVERRIDE="0"
 
-readonly ALL_STEPS="install-req derper-build derper-service write-ingress start-cloudflared tailscale-acl reachability-check derper-cert verify"
+readonly ALL_STEPS="install-req derper-build derper-service start-cloudflared tailscale-acl reachability-check derper-cert verify"
 
 # "prepare" only needs outbound internet (cloudflared included); "activate" needs DNS/port-80 working.
 declare -A BUNDLES=(
-    [prepare]="install-req derper-build derper-service write-ingress start-cloudflared tailscale-acl"
+    [prepare]="install-req derper-build derper-service start-cloudflared tailscale-acl"
     [activate]="reachability-check derper-cert verify"
 )
 
@@ -73,15 +73,16 @@ Steps (run in this order by default):
   install-req          Call utils/sh/install-req.sh for cloudflared (no Docker on the VPS)
   derper-build         Install the derper binary
   derper-service       Write + start derper's systemd service (no cert yet)
-  write-ingress        Write server/cloudflared's ingress fragment for derp
-  start-cloudflared    Call server/cloudflared/start.sh (idempotent)
+  start-cloudflared    Call server/cloudflared/start.sh (idempotent) — brings
+                       up the shared tunnel for guac/webserver later; derp
+                       itself is a direct DNS A record, not tunnel-routed
   tailscale-acl        Manual: print the derpMap ACL block to add
   reachability-check   Confirm DNS for derp-host resolves to this VPS
   derper-cert          Get derper's cert via certbot standalone (HTTP-01), restart derper
   verify               Status check + local curl test
 
 Bundles (--prepare / --activate, or --only prepare / --only activate):
-  prepare    -> install-req, derper-build, derper-service, write-ingress,
+  prepare    -> install-req, derper-build, derper-service,
                 start-cloudflared, tailscale-acl (needs nothing from the
                 outside world)
   activate   -> reachability-check, derper-cert, verify
@@ -197,17 +198,6 @@ EOF
 
     systemctl daemon-reload
     systemctl enable --now derper
-}
-
-step_write_ingress() {
-    print_info "Writing cloudflared ingress fragment"
-    cat > "$SCRIPT_DIR/cloudflared.ingress.yml" << FRAGMENT
-  - hostname: $DERP_HOST
-    service: https://localhost:$DERPER_PORT
-    originRequest:
-      noTLSVerify: true
-      originServerName: $DERP_HOST
-FRAGMENT
 }
 
 step_start_cloudflared() {
@@ -337,7 +327,6 @@ write_cache
 should_run "install-req"          && step_install_req
 should_run "derper-build"         && step_derper_build
 should_run "derper-service"       && step_derper_service
-should_run "write-ingress"        && step_write_ingress
 should_run "start-cloudflared"    && step_start_cloudflared
 should_run "tailscale-acl"        && step_tailscale_acl
 should_run "reachability-check"   && step_reachability_check

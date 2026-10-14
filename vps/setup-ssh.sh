@@ -6,6 +6,11 @@ set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SERVER_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# copy-repo rm -rf's SERVER_ROOT's parent — if the invoking shell (or any
+# child process this spawns) is cd'd inside it, getcwd() breaks afterward.
+cd /
+
 source "$SERVER_ROOT/utils/sh/print.sh"
 source "$SERVER_ROOT/utils/sh/guard.sh"
 source "$SERVER_ROOT/utils/sh/github_keys.sh"
