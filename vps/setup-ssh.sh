@@ -117,6 +117,21 @@ step_create_user() {
     fi
     usermod -aG sudo "$TUNNEL_USER"
 
+    # No password is ever set for $TUNNEL_USER (key-only account), so sudo
+    # needs NOPASSWD or it has nothing to prompt for.
+    local sudoers_tmp
+    sudoers_tmp="$(mktemp)"
+    echo "$TUNNEL_USER ALL=(ALL) NOPASSWD:ALL" > "$sudoers_tmp"
+    if visudo -cf "$sudoers_tmp" &> /dev/null; then
+        install -m 0440 -o root -g root "$sudoers_tmp" "/etc/sudoers.d/$TUNNEL_USER"
+        print_info "Passwordless sudo configured for $TUNNEL_USER"
+    else
+        print_error "Generated sudoers drop-in failed validation, not installed"
+        rm -f "$sudoers_tmp"
+        exit 1
+    fi
+    rm -f "$sudoers_tmp"
+
     local ssh_dir="/home/$TUNNEL_USER/.ssh"
     mkdir -p "$ssh_dir"
     touch "$ssh_dir/authorized_keys"
