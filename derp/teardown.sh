@@ -8,6 +8,7 @@ set -euo pipefail
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SERVER_ROOT="$(dirname "$SCRIPT_DIR")"
 source "$SERVER_ROOT/utils/sh/print.sh"
+source "$SERVER_ROOT/utils/sh/guard.sh"
 
 readonly ALL_STEPS="stop-service remove-binary remove-toolchain fix-renewal-hook"
 
@@ -128,6 +129,8 @@ while [ $# -gt 0 ]; do
         *) print_error "Unknown flag: $1"; usage; exit 1 ;;
     esac
 done
+
+require_root || { usage; exit 1; }
 
 
 # Run

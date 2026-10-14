@@ -6,6 +6,7 @@ set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/utils/sh/print.sh"
+source "$SCRIPT_DIR/utils/sh/guard.sh"
 
 readonly ALL_STEPS="baseline firewall ssh-harden"
 
@@ -142,6 +143,8 @@ while [ $# -gt 0 ]; do
         *) print_error "Unknown flag: $1"; usage; exit 1 ;;
     esac
 done
+
+require_root || { usage; exit 1; }
 
 
 # Run

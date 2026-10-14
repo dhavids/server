@@ -4,6 +4,7 @@
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SERVER_ROOT="$(dirname "$SCRIPT_DIR")"
 source "$SERVER_ROOT/utils/sh/print.sh"
+source "$SERVER_ROOT/utils/sh/guard.sh"
 
 readonly RUNTIME_DIR="$SCRIPT_DIR/runtime"
 readonly CONFIG_OUT="$RUNTIME_DIR/config.yml"
@@ -15,6 +16,10 @@ CF_TUNNEL_NAME="pi-tunnel"
 
 
 # Tunnel identity (one-time steps, skipped if already done)
+
+ensure_cloudflared_cli() {
+    bash "$SERVER_ROOT/utils/sh/install-req.sh" cloudflared
+}
 
 ensure_tunnel_login() {
     if [ -f "$HOME/.cloudflared/cert.pem" ]; then

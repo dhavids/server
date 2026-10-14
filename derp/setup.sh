@@ -11,6 +11,7 @@ readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SERVER_ROOT="$(dirname "$SCRIPT_DIR")"
 readonly CACHE_FILE="$SCRIPT_DIR/.env"
 source "$SERVER_ROOT/utils/sh/print.sh"
+source "$SERVER_ROOT/utils/sh/guard.sh"
 
 DOMAIN=""
 SUBDOMAIN="derp"
@@ -26,11 +27,11 @@ ACTIVATE_FLAG="0"
 DOMAIN_OVERRIDE="0"
 DERP_HOST_OVERRIDE="0"
 
-readonly ALL_STEPS="derper-build derper-service write-ingress start-cloudflared tailscale-acl reachability-check derper-cert verify"
+readonly ALL_STEPS="install-req derper-build derper-service write-ingress start-cloudflared tailscale-acl reachability-check derper-cert verify"
 
 # "prepare" only needs outbound internet (cloudflared included); "activate" needs DNS/port-80 working.
 declare -A BUNDLES=(
-    [prepare]="derper-build derper-service write-ingress start-cloudflared tailscale-acl"
+    [prepare]="install-req derper-build derper-service write-ingress start-cloudflared tailscale-acl"
     [activate]="reachability-check derper-cert verify"
 )
 
@@ -67,6 +68,7 @@ USAGE
 list_steps() {
     cat << 'STEPS'
 Steps (run in this order by default):
+  install-req          Call utils/sh/install-req.sh for docker + cloudflared
   derper-build         Install the derper binary
   derper-service       Write + start derper's systemd service (no cert yet)
   write-ingress        Write server/cloudflared's ingress fragment for derp
@@ -77,8 +79,9 @@ Steps (run in this order by default):
   verify               Status check + local curl test
 
 Bundles (--prepare / --activate, or --only prepare / --only activate):
-  prepare    -> derper-build, derper-service, write-ingress, start-cloudflared,
-                tailscale-acl (needs nothing from the outside world)
+  prepare    -> install-req, derper-build, derper-service, write-ingress,
+                start-cloudflared, tailscale-acl (needs nothing from the
+                outside world)
   activate   -> reachability-check, derper-cert, verify
                (needs DNS + port 80 actually working)
 
@@ -121,6 +124,10 @@ should_run() {
 
 
 # Steps
+
+step_install_req() {
+    bash "$SERVER_ROOT/utils/sh/install-req.sh" docker cloudflared
+}
 
 step_derper_build() {
     print_info "Installing derper"
@@ -289,6 +296,8 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+require_root || { usage; exit 1; }
+
 [ -n "$ONLY" ] && ONLY="$(expand_steps "$ONLY")"
 [ -n "$SKIP" ] && SKIP="$(expand_steps "$SKIP")"
 
@@ -319,6 +328,7 @@ write_cache
 
 # Run
 
+should_run "install-req"          && step_install_req
 should_run "derper-build"         && step_derper_build
 should_run "derper-service"       && step_derper_service
 should_run "write-ingress"        && step_write_ingress

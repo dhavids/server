@@ -8,6 +8,9 @@ set -euo pipefail
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
+require_root || exit 1
+
+ensure_cloudflared_cli
 ensure_tunnel_login
 ensure_tunnel_exists
 
