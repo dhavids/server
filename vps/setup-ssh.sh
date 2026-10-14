@@ -8,6 +8,7 @@ readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SERVER_ROOT="$(dirname "$SCRIPT_DIR")"
 source "$SERVER_ROOT/utils/sh/print.sh"
 source "$SERVER_ROOT/utils/sh/guard.sh"
+source "$SERVER_ROOT/utils/sh/github_keys.sh"
 
 readonly ALL_STEPS="create-user harden"
 
@@ -83,9 +84,8 @@ should_run() {
 
 # Pubkey resolution
 
-# Fetches github.com/$GITHUB_USER.keys and sets PUBKEY to the one entry
-# whose raw key data ends with the chosen id (--key-id, else --email) —
-# refuses rather than guess if zero or more than one key matches.
+# Sets PUBKEY from github.com/$GITHUB_USER.keys via select_github_key
+# (utils/sh/github_keys.sh) — --key-id, else --email, must pick exactly one.
 resolve_github_pubkey() {
     local id="$KEY_ID"
     [ -z "$id" ] && id="$EMAIL"
@@ -93,43 +93,10 @@ resolve_github_pubkey() {
         print_error "--github-user needs --key-id (or --email) to pick among its keys"
         exit 1
     fi
-    if [ "${#id}" -lt 3 ]; then
-        print_error "--key-id (or --email) must be at least 3 characters"
-        exit 1
-    fi
 
     command -v curl &> /dev/null || { apt-get update; apt-get install -y curl; }
 
-    local keys
-    keys="$(curl -fsSL "https://github.com/${GITHUB_USER}.keys")"
-    if [ -z "$keys" ]; then
-        print_error "No keys found at github.com/${GITHUB_USER}.keys"
-        exit 1
-    fi
-
-    local line key_data matches=""
-    while IFS= read -r line; do
-        [ -z "$line" ] && continue
-        key_data="$(awk '{print $2}' <<< "$line")"
-        if [[ "$key_data" == *"$id" ]]; then
-            matches="${matches}${line}"$'\n'
-        fi
-    done <<< "$keys"
-    matches="${matches%$'\n'}"
-
-    local match_count=0
-    [ -n "$matches" ] && match_count="$(wc -l <<< "$matches")"
-
-    if [ "$match_count" -eq 0 ]; then
-        print_error "No key at github.com/${GITHUB_USER}.keys ends with '$id'"
-        exit 1
-    fi
-    if [ "$match_count" -gt 1 ]; then
-        print_error "$match_count keys at github.com/${GITHUB_USER}.keys end with '$id' — give a longer --key-id"
-        exit 1
-    fi
-
-    PUBKEY="$matches"
+    PUBKEY="$(select_github_key "$GITHUB_USER" "$id")" || exit 1
     print_info "Matched one key at github.com/${GITHUB_USER}.keys via '$id'"
 }
 
