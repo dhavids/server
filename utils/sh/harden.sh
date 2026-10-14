@@ -1,12 +1,13 @@
 #!/bin/bash
-# Box-level hardening for the Pi, run once before any target's compose comes
-# up — not specific to derp/guac/cloudflared, which each open their own
-# ports separately. See --help and --list-steps for the full breakdown.
+# Box-level hardening, run once on any box (VPS or Pi) before any target's
+# setup comes up — not specific to derp/guac/cloudflared, which each open
+# their own ports separately. See --help and --list-steps for the full
+# breakdown.
 set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/utils/sh/print.sh"
-source "$SCRIPT_DIR/utils/sh/guard.sh"
+source "$SCRIPT_DIR/print.sh"
+source "$SCRIPT_DIR/guard.sh"
 
 readonly ALL_STEPS="baseline firewall ssh-harden"
 
@@ -142,6 +143,8 @@ step_ssh_harden() {
 
     systemctl restart ssh
     print_info "SSH restarted with hardened config"
+
+    echo "$(date -Iseconds) admin=$ADMIN_USER" > "$HARDENED_MARKER"
 }
 
 

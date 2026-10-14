@@ -1,10 +1,10 @@
 #!/bin/bash
-# Stands up derper directly on the Pi (no container yet) to validate DERP
-# relay connectivity before building the full compose stack. Two phases,
-# run separately: --prepare (no outside-world dependency) and --activate
-# (needs DNS/port-80 actually working). See --help and --list-steps for the
-# full flag and step breakdown. Root-level hardening is assumed already run
-# separately — this script does not harden anything.
+# Stands up derper directly on the VPS (no container yet — the VPS has no
+# Docker) to get a working DERP relay. Two phases, run separately: --prepare
+# (no outside-world dependency) and --activate (needs DNS/port-80 actually
+# working). See --help and --list-steps for the full flag and step
+# breakdown. Root-level hardening is assumed already run separately — this
+# script does not harden anything.
 set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -297,6 +297,8 @@ while [ $# -gt 0 ]; do
 done
 
 require_root || { usage; exit 1; }
+require_user tunnel || exit 1
+require_hardened || exit 1
 
 [ -n "$ONLY" ] && ONLY="$(expand_steps "$ONLY")"
 [ -n "$SKIP" ] && SKIP="$(expand_steps "$SKIP")"
