@@ -1,0 +1,6 @@
+# Per-target local config — names the real domain, never committed.
+.env
+cloudflared.ingress.yml
+
+# cloudflared's merged config and tunnel credentials — generated locally.
+cloudflared/runtime/
