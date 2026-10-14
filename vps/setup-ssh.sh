@@ -10,7 +10,7 @@ source "$SERVER_ROOT/utils/sh/print.sh"
 source "$SERVER_ROOT/utils/sh/guard.sh"
 source "$SERVER_ROOT/utils/sh/github_keys.sh"
 
-readonly ALL_STEPS="create-user harden"
+readonly ALL_STEPS="create-user copy-repo harden"
 
 TUNNEL_USER="tunnel"
 PUBKEY=""
@@ -56,10 +56,12 @@ list_steps() {
     cat << 'STEPS'
 Steps (run in this order by default):
   create-user  Create --tunnel-user, full sudo, authorize --pubkey if given
+  copy-repo    Overwrite ~<tunnel-user>/server with this repo, so git pull
+               works there without re-cloning
   harden       Call utils/sh/harden.sh --user <tunnel-user>
 
-After this, SSH in as --tunnel-user and run setup.sh for tailscale-up and
-derp-setup — no need to keep this root session open.
+After this, SSH in as --tunnel-user and run ~/server/vps/setup.sh for
+tailscale-up and derp-setup — no need to keep this root session open.
 STEPS
 }
 
@@ -151,6 +153,14 @@ step_create_user() {
     fi
 }
 
+step_copy_repo() {
+    local dest="/home/$TUNNEL_USER/server"
+    rm -rf "$dest"
+    cp -a "$SERVER_ROOT" "$dest"
+    chown -R "$TUNNEL_USER:$TUNNEL_USER" "$dest"
+    print_info "Repo copied to $dest"
+}
+
 step_harden() {
     bash "$SERVER_ROOT/utils/sh/harden.sh" --user "$TUNNEL_USER"
 }
@@ -176,14 +186,22 @@ done
 
 require_root || { usage; exit 1; }
 
+# Re-run as tunnel means setup-ssh already ran — copy-repo would rm -rf
+# the very copy this is executing from.
+if [ "${SUDO_USER:-}" = "$TUNNEL_USER" ]; then
+    print_info "setup-ssh.sh already run for $TUNNEL_USER. SSH in and run ~/server/vps/setup.sh."
+    exit 0
+fi
+
 
 # Run
 
 should_run "create-user"   && step_create_user
+should_run "copy-repo"     && step_copy_repo
 should_run "harden"        && step_harden
 
 if should_run "harden" && [ ! -f "$HARDENED_MARKER" ]; then
     print_warn "Not hardened. Password login is still enabled."
 else
-    print_info "Done. SSH in as $TUNNEL_USER and run setup.sh next."
+    print_info "Done. SSH in as $TUNNEL_USER and run ~/server/vps/setup.sh next."
 fi
