@@ -15,6 +15,7 @@ source "$SERVER_ROOT/utils/sh/guard.sh"
 
 DOMAIN=""
 SUBDOMAIN="derp"
+TUNNEL_PREFIX="vps"
 DERP_HOST=""
 EMAIL=""
 DERPER_PORT="8443"
@@ -50,6 +51,7 @@ Optional:
   -s, --subdomain NAME    Subdomain prefix (default: derp) — e.g. -s derp-vm
                           gives derp-vm.DOMAIN, so a VM test run doesn't
                           collide with the real Pi's derp.DOMAIN
+  -t, --tunnel-prefix NAME  Passed through to cloudflared/start.sh (default: vps)
   --derp-host HOST        Override the derived SUBDOMAIN.DOMAIN entirely
   --derper-port PORT      Internal port derper listens on (default: 8443)
   --stun-port PORT        STUN port, must match the router's forwarded port (default: 3478)
@@ -210,7 +212,7 @@ FRAGMENT
 
 step_start_cloudflared() {
     print_info "Calling server/cloudflared/start.sh"
-    bash "$SERVER_ROOT/cloudflared/start.sh"
+    bash "$SERVER_ROOT/cloudflared/start.sh" --subdomain "$SUBDOMAIN" --tunnel-prefix "$TUNNEL_PREFIX"
 }
 
 step_verify() {
@@ -262,6 +264,7 @@ write_cache() {
     cat > "$CACHE_FILE" << CACHE
 DOMAIN="$DOMAIN"
 SUBDOMAIN="$SUBDOMAIN"
+TUNNEL_PREFIX="$TUNNEL_PREFIX"
 EMAIL="$EMAIL"
 DERP_HOST="$DERP_HOST"
 DERPER_PORT="$DERPER_PORT"
@@ -281,6 +284,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         -d|--domain) DOMAIN="$2"; DOMAIN_OVERRIDE="1"; shift 2 ;;
         -s|--subdomain) SUBDOMAIN="$2"; DOMAIN_OVERRIDE="1"; shift 2 ;;
+        -t|--tunnel-prefix) TUNNEL_PREFIX="$2"; shift 2 ;;
         --derp-host) DERP_HOST="$2"; DOMAIN_OVERRIDE="1"; DERP_HOST_OVERRIDE="1"; shift 2 ;;
         -e|--email) EMAIL="$2"; shift 2 ;;
         --derper-port) DERPER_PORT="$2"; shift 2 ;;

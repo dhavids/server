@@ -14,6 +14,7 @@ readonly ALL_STEPS="tailscale-up derp-setup"
 DOMAIN=""
 EMAIL=""
 SUBDOMAIN=""
+TUNNEL_PREFIX=""
 ONLY=""
 SKIP=""
 START=""
@@ -32,6 +33,7 @@ Optional:
   -d, --domain DOMAIN   Passed through to derp/setup.sh --prepare
   -e, --email EMAIL     Passed through to derp/setup.sh --prepare
   -s, --subdomain NAME  Passed through to derp/setup.sh --prepare
+  -t, --tunnel-prefix NAME  Passed through to derp/setup.sh --prepare
   --only STEPS          Run only these comma-separated steps
   --skip STEPS          Run all steps except these comma-separated ones
   --start STEP          Resume from this step onward (skip everything before it)
@@ -87,6 +89,7 @@ step_derp_setup() {
     [ -n "$DOMAIN" ] && args+=(--domain "$DOMAIN")
     [ -n "$EMAIL" ] && args+=(--email "$EMAIL")
     [ -n "$SUBDOMAIN" ] && args+=(--subdomain "$SUBDOMAIN")
+    [ -n "$TUNNEL_PREFIX" ] && args+=(--tunnel-prefix "$TUNNEL_PREFIX")
     bash "$SERVER_ROOT/derp/setup.sh" "${args[@]}"
 }
 
@@ -98,6 +101,7 @@ while [ $# -gt 0 ]; do
         -d|--domain) DOMAIN="$2"; shift 2 ;;
         -e|--email) EMAIL="$2"; shift 2 ;;
         -s|--subdomain) SUBDOMAIN="$2"; shift 2 ;;
+        -t|--tunnel-prefix) TUNNEL_PREFIX="$2"; shift 2 ;;
         --only) ONLY="$2"; shift 2 ;;
         --skip) SKIP="$2"; shift 2 ;;
         --start) START="$2"; shift 2 ;;

@@ -13,7 +13,20 @@ readonly CONFIG_OUT="/etc/cloudflared/config.yml"
 readonly TARGET_DIRS="derp guac webserver"
 readonly FRAGMENT_NAME="cloudflared.ingress.yml"
 
-CF_TUNNEL_NAME="pi-tunnel"
+# "derp" (the default subdomain) gets the bare prefix name; any other
+# subdomain gets it as a suffix, so e.g. -s guac doesn't collide with derp's.
+tunnel_name_for() {
+    local prefix="$1" subdomain="$2"
+    if [ "$subdomain" = "derp" ]; then
+        echo "${prefix}-tunnel"
+    else
+        echo "${prefix}-tunnel-${subdomain}"
+    fi
+}
+
+TUNNEL_PREFIX="${TUNNEL_PREFIX:-vps}"
+SUBDOMAIN="${SUBDOMAIN:-derp}"
+CF_TUNNEL_NAME="$(tunnel_name_for "$TUNNEL_PREFIX" "$SUBDOMAIN")"
 [ -f "$SCRIPT_DIR/.env" ] && source "$SCRIPT_DIR/.env"
 
 
@@ -33,7 +46,7 @@ ensure_tunnel_login() {
 }
 
 ensure_tunnel_exists() {
-    if cloudflared tunnel list 2>/dev/null | grep -q "$CF_TUNNEL_NAME"; then
+    if cloudflared tunnel list 2>/dev/null | awk -v n="$CF_TUNNEL_NAME" '$2==n {found=1} END {exit !found}'; then
         print_info "Tunnel '$CF_TUNNEL_NAME' already exists, reusing it"
     else
         print_info "Creating tunnel '$CF_TUNNEL_NAME'"
