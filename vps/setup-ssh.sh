@@ -98,6 +98,8 @@ resolve_github_pubkey() {
         exit 1
     fi
 
+    command -v curl &> /dev/null || { apt-get update; apt-get install -y curl; }
+
     local keys
     keys="$(curl -fsSL "https://github.com/${GITHUB_USER}.keys")"
     if [ -z "$keys" ]; then
