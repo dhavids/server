@@ -208,8 +208,9 @@ done
 
 require_root || { usage; exit 1; }
 
-# Re-run as tunnel means setup-ssh already ran. Refuse unless --force.
-if [ "${SUDO_USER:-}" = "$TUNNEL_USER" ] && [ -z "$FORCE" ]; then
+# Already hardened means setup-ssh already ran to completion. Refuse
+# unless --force, regardless of which user/session is re-running it.
+if [ -f "$HARDENED_MARKER" ] && [ -z "$FORCE" ]; then
     print_info "setup-ssh.sh already run for $TUNNEL_USER. SSH in and run ~/server/vps/setup.sh."
     print_info "Pass --force to redo it."
     exit 0
