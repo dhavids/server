@@ -84,8 +84,7 @@ should_run() {
 
 # Pubkey resolution
 
-# Sets PUBKEY from github.com/$GITHUB_USER.keys via select_github_key
-# (utils/sh/github_keys.sh) — --key-id, else --email, must pick exactly one.
+# Sets PUBKEY from github.com/$GITHUB_USER.keys via select_github_key.
 resolve_github_pubkey() {
     local id="$KEY_ID"
     [ -z "$id" ] && id="$EMAIL"
@@ -120,8 +119,8 @@ step_create_user() {
     mkdir -p "$ssh_dir"
     touch "$ssh_dir/authorized_keys"
 
+    local key_content=""
     if [ -n "$PUBKEY" ]; then
-        local key_content
         if [ -f "$PUBKEY" ]; then
             key_content="$(cat "$PUBKEY")"
         else
@@ -139,14 +138,16 @@ step_create_user() {
     chmod 600 "$ssh_dir/authorized_keys"
     chown -R "$TUNNEL_USER:$TUNNEL_USER" "$ssh_dir"
 
-    if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "$TUNNEL_USER@localhost" "echo ok" &> /dev/null; then
-        print_info "Key login for $TUNNEL_USER confirmed working"
+    # Confirms the key is in authorized_keys — can't test login, this host
+    # rarely holds the private key.
+    if [ -n "$key_content" ] && grep -qxF "$key_content" "$ssh_dir/authorized_keys"; then
+        print_info "Key authorized for $TUNNEL_USER in $ssh_dir/authorized_keys"
     elif should_run "harden"; then
-        print_error "Key login for $TUNNEL_USER not confirmed. harden runs next and disables password login."
+        print_error "No key authorized for $TUNNEL_USER. harden runs next and disables password login."
         print_error "Authorize a working key first, or run with --only create-user."
         exit 1
     else
-        print_warn "Key login for $TUNNEL_USER not confirmed. harden is not running this time."
+        print_warn "No key authorized for $TUNNEL_USER. harden is not running this time."
     fi
 }
 

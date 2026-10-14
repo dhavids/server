@@ -9,6 +9,11 @@ print_warn() {
     echo "[warn] $1" >&2
 }
 
+# Non-error stderr output, safe even if the caller captures stdout.
+print_hint() {
+    echo "[hint] $1" >&2
+}
+
 print_error() {
     echo "[error] $1" >&2
 }

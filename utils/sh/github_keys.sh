@@ -1,8 +1,6 @@
 #!/bin/bash
 # Fetches and matches public keys from github.com/<user>.keys. Source,
-# don't execute. Assumes print.sh is already in scope (sourced by caller).
-# This is public key data — loosening a match here is a correctness/UX
-# question, not a security one.
+# don't execute. Assumes print.sh is already sourced.
 
 fetch_github_keys() {
     local user="$1"
@@ -33,23 +31,23 @@ match_github_keys_ci() {
     done <<< "$keys"
 }
 
-# Prints each key's trailing characters as a suggestion list, for when no
-# id matched — the key data is already public, so showing it back costs
-# nothing.
+# Prints each key's trailing characters as one comma-separated hint line.
 suggest_github_keys() {
     local keys="$1" tail_len="${2:-8}"
     local line key_data
+    local suggestions=()
     while IFS= read -r line; do
         [ -z "$line" ] && continue
         key_data="$(awk '{print $2}' <<< "$line")"
-        print_info "  ...${key_data: -$tail_len}"
+        suggestions+=("...${key_data: -$tail_len}")
     done <<< "$keys"
+    local joined
+    joined="$(printf '%s, ' "${suggestions[@]}")"
+    print_hint "${joined%, }"
 }
 
-# Fetches github.com/$1.keys and prints (stdout) the one key whose raw data
-# ends with $2 — tries an exact match first, then falls back to
-# case-insensitive. Refuses (return 1) on zero or multiple matches; on
-# zero, suggests candidates' trailing characters.
+# Prints (stdout) the one github.com/$1.keys key ending in $2. Refuses on
+# zero or multiple matches.
 select_github_key() {
     local user="$1" id="$2"
     if [ "${#id}" -lt 3 ]; then
