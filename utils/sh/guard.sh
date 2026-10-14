@@ -6,7 +6,7 @@ readonly HARDENED_MARKER="/etc/server-hardened"
 
 require_root() {
     if [ "$EUID" -ne 0 ]; then
-        print_error "This must be run as root (sudo bash $(basename "$0"))"
+        print_error "Not running as root. Use: sudo bash $(basename "$0")"
         return 1
     fi
 }
@@ -16,7 +16,7 @@ require_root() {
 require_user() {
     local expected="$1"
     if [ "${SUDO_USER:-}" != "$expected" ]; then
-        print_error "This must be run via 'sudo' as $expected (got '${SUDO_USER:-<none, running as root directly>}')"
+        print_error "Expected sudo user $expected, got '${SUDO_USER:-none}'"
         return 1
     fi
 }
@@ -27,7 +27,7 @@ require_user() {
 # steps that skipped ssh-harden entirely.
 require_hardened() {
     if [ ! -f "$HARDENED_MARKER" ]; then
-        print_error "This box hasn't been hardened yet — run utils/sh/harden.sh's ssh-harden step first"
+        print_error "Not hardened. Run utils/sh/harden.sh's ssh-harden step first."
         return 1
     fi
 }

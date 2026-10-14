@@ -133,13 +133,13 @@ step_ssh_harden() {
     } > /etc/ssh/sshd_config.d/00-harden.conf
 
     if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "$ADMIN_USER@localhost" "echo ok" &> /dev/null; then
-        print_info "Key login for $ADMIN_USER confirmed working before restarting SSH"
+        print_info "Key login for $ADMIN_USER confirmed"
     else
-        print_warn "Couldn't confirm key login for $ADMIN_USER automatically — verify it yourself before continuing"
+        print_warn "Key login for $ADMIN_USER not confirmed"
     fi
 
     confirm "Restart SSH now to apply PermitRootLogin/PasswordAuthentication no? Open a second terminal and confirm $ADMIN_USER@<pi-ip> still logs in with a key before answering yes." \
-        || { print_warn "sshd_config was edited but SSH was not restarted — changes aren't active yet"; return; }
+        || { print_warn "sshd_config edited. SSH not restarted."; return; }
 
     systemctl restart ssh
     print_info "SSH restarted with hardened config"
@@ -172,4 +172,8 @@ should_run "baseline"     && step_baseline
 should_run "firewall"     && step_firewall
 should_run "ssh-harden"   && step_ssh_harden
 
-print_info "Done"
+if should_run "ssh-harden" && [ ! -f "$HARDENED_MARKER" ]; then
+    print_warn "Not hardened. sshd was not restarted. Password login is still enabled."
+else
+    print_info "Done"
+fi

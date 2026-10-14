@@ -15,6 +15,7 @@ TUNNEL_USER="tunnel"
 PUBKEY=""
 GITHUB_USER=""
 KEY_ID=""
+EMAIL=""
 ONLY=""
 SKIP=""
 START=""
@@ -162,7 +163,7 @@ step_create_user() {
             print_info "Authorized key added for $TUNNEL_USER"
         fi
     else
-        print_warn "No --pubkey given — add a key to $ssh_dir/authorized_keys manually before continuing"
+        print_warn "No --pubkey given. $ssh_dir/authorized_keys is empty."
     fi
 
     chmod 700 "$ssh_dir"
@@ -171,8 +172,12 @@ step_create_user() {
 
     if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "$TUNNEL_USER@localhost" "echo ok" &> /dev/null; then
         print_info "Key login for $TUNNEL_USER confirmed working"
+    elif should_run "harden"; then
+        print_error "Key login for $TUNNEL_USER not confirmed. harden runs next and disables password login."
+        print_error "Authorize a working key first, or run with --only create-user."
+        exit 1
     else
-        print_warn "Couldn't confirm key login for $TUNNEL_USER — verify manually before the harden step, which disables password login"
+        print_warn "Key login for $TUNNEL_USER not confirmed. harden is not running this time."
     fi
 }
 
@@ -207,4 +212,8 @@ require_root || { usage; exit 1; }
 should_run "create-user"   && step_create_user
 should_run "harden"        && step_harden
 
-print_info "Done — SSH in as $TUNNEL_USER now and run setup.sh for the rest"
+if should_run "harden" && [ ! -f "$HARDENED_MARKER" ]; then
+    print_warn "Not hardened. Password login is still enabled."
+else
+    print_info "Done. SSH in as $TUNNEL_USER and run setup.sh next."
+fi
