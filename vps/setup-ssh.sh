@@ -20,6 +20,7 @@ EMAIL=""
 ONLY=""
 SKIP=""
 START=""
+FORCE=""
 
 
 # Usage
@@ -44,6 +45,8 @@ Optional:
                           trailing characters of each -g key. Falls back
                           to -e if not given.
   -e, --email VALUE       Fallback id for -g if -i isn't given
+  -f, --force             Redo setup even if run as --tunnel-user (normally
+                          refused — this re-ran this account already)
   --only STEPS            Run only these comma-separated steps
   --skip STEPS            Run all steps except these comma-separated ones
   --start STEP            Resume from this step onward (skip everything before it)
@@ -170,8 +173,11 @@ step_create_user() {
 
 step_copy_repo() {
     local dest="/home/$TUNNEL_USER/server"
+    local staging
+    staging="$(mktemp -d)"
+    cp -a "$SERVER_ROOT/." "$staging/"
     rm -rf "$dest"
-    cp -a "$SERVER_ROOT" "$dest"
+    mv "$staging" "$dest"
     chown -R "$TUNNEL_USER:$TUNNEL_USER" "$dest"
     print_info "Repo copied to $dest"
 }
@@ -190,6 +196,7 @@ while [ $# -gt 0 ]; do
         -g|--github-user) GITHUB_USER="$2"; shift 2 ;;
         -i|--key-id) KEY_ID="$2"; shift 2 ;;
         -e|--email) EMAIL="$2"; shift 2 ;;
+        -f|--force) FORCE="1"; shift ;;
         --only) ONLY="$2"; shift 2 ;;
         --skip) SKIP="$2"; shift 2 ;;
         --start) START="$2"; shift 2 ;;
@@ -201,10 +208,10 @@ done
 
 require_root || { usage; exit 1; }
 
-# Re-run as tunnel means setup-ssh already ran — copy-repo would rm -rf
-# the very copy this is executing from.
-if [ "${SUDO_USER:-}" = "$TUNNEL_USER" ]; then
+# Re-run as tunnel means setup-ssh already ran. Refuse unless --force.
+if [ "${SUDO_USER:-}" = "$TUNNEL_USER" ] && [ -z "$FORCE" ]; then
     print_info "setup-ssh.sh already run for $TUNNEL_USER. SSH in and run ~/server/vps/setup.sh."
+    print_info "Pass --force to redo it."
     exit 0
 fi
 
