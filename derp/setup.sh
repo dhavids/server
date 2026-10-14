@@ -50,7 +50,7 @@ Required:
 Optional:
   -s, --subdomain NAME    Subdomain prefix (default: derp) — e.g. -s derp-vm
                           gives derp-vm.DOMAIN, so a VM test run doesn't
-                          collide with the real Pi's derp.DOMAIN
+                          collide with the real VPS's derp.DOMAIN
   -t, --tunnel-prefix NAME  Passed through to cloudflared/start.sh (default: vps)
   --derp-host HOST        Override the derived SUBDOMAIN.DOMAIN entirely
   --derper-port PORT      Internal port derper listens on (default: 8443)
@@ -76,7 +76,7 @@ Steps (run in this order by default):
   write-ingress        Write server/cloudflared's ingress fragment for derp
   start-cloudflared    Call server/cloudflared/start.sh (idempotent)
   tailscale-acl        Manual: print the derpMap ACL block to add
-  reachability-check   Confirm DNS for derp-host resolves to this Pi
+  reachability-check   Confirm DNS for derp-host resolves to this VPS
   derper-cert          Get derper's cert via certbot standalone (HTTP-01), restart derper
   verify               Status check + local curl test
 
@@ -144,20 +144,20 @@ step_derper_build() {
 }
 
 step_reachability_check() {
-    print_info "Checking DNS for $DERP_HOST points at this Pi"
-    local resolved pi_ip
+    print_info "Checking DNS for $DERP_HOST points at this VPS"
+    local resolved vps_ip
     resolved="$(getent ahostsv4 "$DERP_HOST" | awk '{print $1}' | head -n1 || true)"
-    pi_ip="$(curl -4 -s ifconfig.me || true)"
-    if [ -z "$pi_ip" ]; then
-        print_error "Could not detect this Pi's public IP (curl ifconfig.me failed) — check internet access"
+    vps_ip="$(curl -4 -s ifconfig.me || true)"
+    if [ -z "$vps_ip" ]; then
+        print_error "Could not detect this VPS's public IP (curl ifconfig.me failed) — check internet access"
         exit 1
     fi
-    if [ "$resolved" != "$pi_ip" ]; then
-        print_error "$DERP_HOST resolves to '${resolved:-<nothing>}', this Pi's public IP is '$pi_ip'"
+    if [ "$resolved" != "$vps_ip" ]; then
+        print_error "$DERP_HOST resolves to '${resolved:-<nothing>}', this VPS's public IP is '$vps_ip'"
         print_error "Fix DNS/dynamic-DNS before continuing — certbot's HTTP-01 challenge needs this to match"
         exit 1
     fi
-    print_info "DNS OK: $DERP_HOST -> $pi_ip"
+    print_info "DNS OK: $DERP_HOST -> $vps_ip"
 }
 
 step_derper_cert() {
@@ -176,7 +176,7 @@ step_derper_service() {
     print_info "Creating derper systemd service"
     cat > /etc/systemd/system/derper.service << EOF
 [Unit]
-Description=Tailscale DERP server (Pi validation run)
+Description=Tailscale DERP server
 After=network.target
 
 [Service]
@@ -238,7 +238,7 @@ https://login.tailscale.com/admin/acls (as a sibling of "acls", keep everything 
       "900": {
         "RegionID": 900,
         "RegionCode": "custom",
-        "RegionName": "My Pi",
+        "RegionName": "My VPS",
         "Nodes": [
           {
             "Name": "900a",
