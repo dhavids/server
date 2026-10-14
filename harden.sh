@@ -115,6 +115,22 @@ step_ssh_harden() {
         fi
     done
 
+    # Cloud images ship /etc/ssh/sshd_config.d/50-cloud-init.conf with
+    # PasswordAuthentication yes, read via an Include near the TOP of the
+    # main config — it wins over anything edited above (first match wins).
+    # A drop-in that sorts before it overrides that regardless.
+    mkdir -p /etc/ssh/sshd_config.d
+    if ! grep -qE '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d/\*\.conf' /etc/ssh/sshd_config; then
+        sed -i '1i Include /etc/ssh/sshd_config.d/*.conf' /etc/ssh/sshd_config
+    fi
+    {
+        echo "PermitRootLogin no"
+        echo "PasswordAuthentication no"
+        echo "PubkeyAuthentication yes"
+        echo "ClientAliveInterval 30"
+        echo "ClientAliveCountMax 3"
+    } > /etc/ssh/sshd_config.d/00-harden.conf
+
     if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "$ADMIN_USER@localhost" "echo ok" &> /dev/null; then
         print_info "Key login for $ADMIN_USER confirmed working before restarting SSH"
     else
