@@ -27,13 +27,14 @@ PREPARE_FLAG="0"
 ACTIVATE_FLAG="0"
 DOMAIN_OVERRIDE="0"
 DERP_HOST_OVERRIDE="0"
+STEPS_SELECTED="0"
 
-readonly ALL_STEPS="install-req derper-build derper-service start-cloudflared tailscale-acl reachability-check derper-cert verify"
+readonly ALL_STEPS="install-req derper-build derper-service write-ingress start-cloudflared tailscale-acl reachability-check derper-cert route-dns verify"
 
 # "prepare" only needs outbound internet (cloudflared included); "activate" needs DNS/port-80 working.
 declare -A BUNDLES=(
-    [prepare]="install-req derper-build derper-service start-cloudflared tailscale-acl"
-    [activate]="reachability-check derper-cert verify"
+    [prepare]="install-req derper-build derper-service write-ingress start-cloudflared tailscale-acl"
+    [activate]="reachability-check derper-cert route-dns verify"
 )
 
 
@@ -56,6 +57,7 @@ Optional:
   --derper-port PORT      Internal port derper listens on (default: 8443)
   --stun-port PORT        STUN port, must match the router's forwarded port (default: 3478)
   -p, --prepare           Run only the phase with no outside-world dependency
+                          (default when no step-selecting flag is given)
   -a, --activate          Run only the phase that needs DNS/port-80 working
                           (-e/--email may be overridden here; -d/-s/
                           --derp-host may not — re-run --prepare to change those)
@@ -73,20 +75,22 @@ Steps (run in this order by default):
   install-req          Call utils/sh/install-req.sh for cloudflared (no Docker on the VPS)
   derper-build         Install the derper binary
   derper-service       Write + start derper's systemd service (no cert yet)
-  start-cloudflared    Call server/cloudflared/start.sh (idempotent) — brings
-                       up the shared tunnel for guac/webserver later; derp
-                       itself is a direct DNS A record, not tunnel-routed
+  write-ingress        Write server/cloudflared's ingress fragment for derp
+  start-cloudflared    Call server/cloudflared/start.sh (idempotent)
   tailscale-acl        Manual: print the derpMap ACL block to add
   reachability-check   Confirm DNS for derp-host resolves to this VPS
   derper-cert          Get derper's cert via certbot standalone (HTTP-01), restart derper
+  route-dns            Switch derp-host's DNS from the direct record used
+                       for cert issuance to the tunnel's proxied CNAME
   verify               Status check + local curl test
 
 Bundles (--prepare / --activate, or --only prepare / --only activate):
-  prepare    -> install-req, derper-build, derper-service,
+  prepare    -> install-req, derper-build, derper-service, write-ingress,
                 start-cloudflared, tailscale-acl (needs nothing from the
                 outside world)
-  activate   -> reachability-check, derper-cert, verify
-               (needs DNS + port 80 actually working)
+  activate   -> reachability-check, derper-cert, route-dns, verify
+               (needs DNS + port 80 actually working; derp-host must start
+               as a direct record, route-dns switches it to the tunnel)
 
 Example: sudo bash setup.sh -d example.com -p
 Example: sudo bash setup.sh -d example.com -e you@example.com -a
@@ -173,6 +177,19 @@ step_derper_cert() {
     systemctl restart derper
 }
 
+# Must run after derper-cert — cert issuance needs a direct record first.
+step_route_dns() {
+    local env_file="$SERVER_ROOT/cloudflared/.env"
+    if [ ! -f "$env_file" ]; then
+        print_error "No $env_file yet — run start-cloudflared (--prepare) first"
+        exit 1
+    fi
+    local cf_tunnel_name
+    cf_tunnel_name="$(grep '^CF_TUNNEL_NAME=' "$env_file" | cut -d= -f2- | tr -d '"')"
+    print_info "Switching $DERP_HOST's DNS to tunnel '$cf_tunnel_name'"
+    cloudflared tunnel route dns --overwrite-dns "$cf_tunnel_name" "$DERP_HOST"
+}
+
 step_derper_service() {
     print_info "Creating derper systemd service"
     cat > /etc/systemd/system/derper.service << EOF
@@ -198,6 +215,17 @@ EOF
 
     systemctl daemon-reload
     systemctl enable --now derper
+}
+
+step_write_ingress() {
+    print_info "Writing cloudflared ingress fragment"
+    cat > "$SCRIPT_DIR/cloudflared.ingress.yml" << FRAGMENT
+  - hostname: $DERP_HOST
+    service: https://localhost:$DERPER_PORT
+    originRequest:
+      noTLSVerify: true
+      originServerName: $DERP_HOST
+FRAGMENT
 }
 
 step_start_cloudflared() {
@@ -244,6 +272,11 @@ https://login.tailscale.com/admin/acls (as a sibling of "acls", keep everything 
 Then verify from any tailnet device:
   tailscale netcheck        # the custom region should show a real latency
   tailscale ping <peer-ip>  # should show via DERP(custom) once selected
+
+MANUAL STEP: before running --activate, create an A record for $DERP_HOST
+pointing to $vps_ip (DNS-only, not proxied) — certbot's HTTP-01 challenge
+needs that. --activate's route-dns step switches it to the tunnel's
+proxied CNAME automatically once the cert is issued.
 ACL
 }
 
@@ -279,11 +312,11 @@ while [ $# -gt 0 ]; do
         -e|--email) EMAIL="$2"; shift 2 ;;
         --derper-port) DERPER_PORT="$2"; shift 2 ;;
         --stun-port) STUN_PORT="$2"; shift 2 ;;
-        -p|--prepare) ONLY="prepare"; PREPARE_FLAG="1"; shift ;;
-        -a|--activate) ONLY="activate"; ACTIVATE_FLAG="1"; shift ;;
-        --only) ONLY="$2"; shift 2 ;;
-        --skip) SKIP="$2"; shift 2 ;;
-        --start) START="$2"; shift 2 ;;
+        -p|--prepare) ONLY="prepare"; PREPARE_FLAG="1"; STEPS_SELECTED="1"; shift ;;
+        -a|--activate) ONLY="activate"; ACTIVATE_FLAG="1"; STEPS_SELECTED="1"; shift ;;
+        --only) ONLY="$2"; STEPS_SELECTED="1"; shift 2 ;;
+        --skip) SKIP="$2"; STEPS_SELECTED="1"; shift 2 ;;
+        --start) START="$2"; STEPS_SELECTED="1"; shift 2 ;;
         --list-steps) list_steps; exit 0 ;;
         -h|--help) usage; exit 0 ;;
         *) print_error "Unknown flag: $1"; usage; exit 1 ;;
@@ -293,6 +326,13 @@ done
 require_root || { usage; exit 1; }
 require_user tunnel || exit 1
 require_hardened || exit 1
+
+# No -p/-a/--only/--skip/--start at all means: just run prepare, not
+# everything — activate needs DNS/port-80 already working.
+if [ "$STEPS_SELECTED" = "0" ]; then
+    ONLY="prepare"
+    PREPARE_FLAG="1"
+fi
 
 [ -n "$ONLY" ] && ONLY="$(expand_steps "$ONLY")"
 [ -n "$SKIP" ] && SKIP="$(expand_steps "$SKIP")"
@@ -327,10 +367,12 @@ write_cache
 should_run "install-req"          && step_install_req
 should_run "derper-build"         && step_derper_build
 should_run "derper-service"       && step_derper_service
+should_run "write-ingress"        && step_write_ingress
 should_run "start-cloudflared"    && step_start_cloudflared
 should_run "tailscale-acl"        && step_tailscale_acl
 should_run "reachability-check"   && step_reachability_check
 should_run "derper-cert"          && step_derper_cert
+should_run "route-dns"            && step_route_dns
 should_run "verify"               && step_verify
 
 print_info "Done"

@@ -10,7 +10,7 @@ source "$SERVER_ROOT/utils/sh/print.sh"
 source "$SERVER_ROOT/utils/sh/guard.sh"
 
 readonly CONFIG_OUT="/etc/cloudflared/config.yml"
-readonly TARGET_DIRS="guac webserver"
+readonly TARGET_DIRS="derp guac webserver"
 readonly FRAGMENT_NAME="cloudflared.ingress.yml"
 
 # "derp" (the default subdomain) gets the bare prefix name; any other
