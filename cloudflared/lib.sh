@@ -95,7 +95,7 @@ HEADER
         for target in $TARGET_DIRS; do
             local fragment="$SERVER_ROOT/$target/$FRAGMENT_NAME"
             if [ -f "$fragment" ]; then
-                print_info "Including ingress fragment: $fragment"
+                print_hint "Including ingress fragment: $fragment"
                 cat "$fragment"
                 found_any="1"
             fi
