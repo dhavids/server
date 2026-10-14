@@ -29,11 +29,11 @@ DOMAIN_OVERRIDE="0"
 DERP_HOST_OVERRIDE="0"
 STEPS_SELECTED="0"
 
-readonly ALL_STEPS="install-req derper-build derper-service write-ingress start-cloudflared tailscale-acl reachability-check derper-cert route-dns verify"
+readonly ALL_STEPS="install-req firewall derper-build derper-service write-ingress start-cloudflared tailscale-acl reachability-check derper-cert route-dns verify"
 
 # "prepare" only needs outbound internet (cloudflared included); "activate" needs DNS/port-80 working.
 declare -A BUNDLES=(
-    [prepare]="install-req derper-build derper-service write-ingress start-cloudflared tailscale-acl"
+    [prepare]="install-req firewall derper-build derper-service write-ingress start-cloudflared tailscale-acl"
     [activate]="reachability-check derper-cert route-dns verify"
 )
 
@@ -73,6 +73,7 @@ list_steps() {
     cat << 'STEPS'
 Steps (run in this order by default):
   install-req          Call utils/sh/install-req.sh for cloudflared (no Docker on the VPS)
+  firewall             ufw: open 80/tcp (cert issuance) and stun-port/udp
   derper-build         Install the derper binary
   derper-service       Write + start derper's systemd service (no cert yet)
   write-ingress        Write server/cloudflared's ingress fragment for derp
@@ -85,7 +86,7 @@ Steps (run in this order by default):
   verify               Status check + local curl test
 
 Bundles (--prepare / --activate, or --only prepare / --only activate):
-  prepare    -> install-req, derper-build, derper-service, write-ingress,
+  prepare    -> install-req, firewall, derper-build, derper-service, write-ingress,
                 start-cloudflared, tailscale-acl (needs nothing from the
                 outside world)
   activate   -> reachability-check, derper-cert, route-dns, verify
@@ -134,6 +135,12 @@ should_run() {
 
 step_install_req() {
     bash "$SERVER_ROOT/utils/sh/install-req.sh" cloudflared
+}
+
+step_firewall() {
+    print_info "Opening $STUN_PORT/udp (STUN) and 80/tcp (cert issuance)"
+    ufw allow 80/tcp
+    ufw allow "$STUN_PORT/udp"
 }
 
 step_derper_build() {
@@ -365,6 +372,7 @@ write_cache
 # Run
 
 should_run "install-req"          && step_install_req
+should_run "firewall"             && step_firewall
 should_run "derper-build"         && step_derper_build
 should_run "derper-service"       && step_derper_service
 should_run "write-ingress"        && step_write_ingress
