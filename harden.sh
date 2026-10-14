@@ -24,14 +24,14 @@ usage() {
 Usage: sudo bash harden.sh [options]
 
 Optional:
-  --user NAME   Admin account to verify key-login for before locking SSH down
-                (default: whoever ran sudo)
-  -y, --yes     Don't prompt before restarting SSH
-  --only STEPS  Run only these comma-separated steps
-  --skip STEPS  Run all steps except these comma-separated ones
-  --start STEP  Resume from this step onward (skip everything before it)
-  --list-steps  Print available steps and exit
-  -h, --help    Show this help and exit
+  -u, --user NAME  Admin account to verify key-login for before locking SSH
+                   down (default: whoever ran sudo)
+  -y, --yes        Don't prompt before restarting SSH
+  --only STEPS     Run only these comma-separated steps
+  --skip STEPS     Run all steps except these comma-separated ones
+  --start STEP     Resume from this step onward (skip everything before it)
+  --list-steps     Print available steps and exit
+  -h, --help       Show this help and exit
 USAGE
 }
 
@@ -149,7 +149,7 @@ step_ssh_harden() {
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --user) ADMIN_USER="$2"; shift 2 ;;
+        -u|--user) ADMIN_USER="$2"; shift 2 ;;
         -y|--yes) ASSUME_YES="1"; shift ;;
         --only) ONLY="$2"; shift 2 ;;
         --skip) SKIP="$2"; shift 2 ;;

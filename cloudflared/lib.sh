@@ -1,13 +1,15 @@
 #!/bin/bash
 # Shared functions for start.sh / stop.sh / reconfigure.sh. Not run directly.
+# Runs cloudflared natively (systemd via its own 'cloudflared service
+# install'), not in a container — this tunnel lives on the VPS, which has
+# no Docker at all.
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SERVER_ROOT="$(dirname "$SCRIPT_DIR")"
 source "$SERVER_ROOT/utils/sh/print.sh"
 source "$SERVER_ROOT/utils/sh/guard.sh"
 
-readonly RUNTIME_DIR="$SCRIPT_DIR/runtime"
-readonly CONFIG_OUT="$RUNTIME_DIR/config.yml"
+readonly CONFIG_OUT="/etc/cloudflared/config.yml"
 readonly TARGET_DIRS="derp guac webserver"
 readonly FRAGMENT_NAME="cloudflared.ingress.yml"
 
@@ -63,21 +65,17 @@ get_credentials_file() {
 
 # Writes the merged config to $CONFIG_OUT.new; returns 0 if it differs from
 # the config currently in place (or none exists yet), 1 if unchanged.
-#
-# credentials-file is written as the path *inside* the container
-# (docker-compose.yml mounts $HOME/.cloudflared there) — not the host path
-# get_credentials_file deals with, which only exists to make sure the file
-# is actually present on the host before the container starts.
 merge_config() {
     local tunnel_id="$1"
+    local cred_file="$2"
     local found_any="0"
     local new_config="$CONFIG_OUT.new"
 
-    mkdir -p "$RUNTIME_DIR"
+    mkdir -p /etc/cloudflared
     {
         cat << HEADER
 tunnel: $tunnel_id
-credentials-file: /etc/cloudflared/creds/${tunnel_id}.json
+credentials-file: $cred_file
 
 ingress:
 HEADER
@@ -102,4 +100,20 @@ HEADER
     fi
     mv "$new_config" "$CONFIG_OUT"
     return 0
+}
+
+
+# Native systemd service
+
+ensure_cloudflared_service() {
+    if systemctl list-unit-files 2>/dev/null | grep -q '^cloudflared\.service'; then
+        return
+    fi
+    print_info "Installing cloudflared as a systemd service"
+    cloudflared service install
+    systemctl daemon-reload
+}
+
+cloudflared_is_active() {
+    systemctl is-active --quiet cloudflared
 }

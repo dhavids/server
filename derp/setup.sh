@@ -40,35 +40,35 @@ declare -A BUNDLES=(
 
 usage() {
     cat << 'USAGE'
-Usage: sudo bash setup.sh --domain DOMAIN --email EMAIL [options]
+Usage: sudo bash setup.sh -d DOMAIN -e EMAIL [options]
 
 Required:
-  --domain DOMAIN     Base domain, e.g. example.com (derives SUBDOMAIN.DOMAIN)
-  --email EMAIL       Real email address for Let's Encrypt notices
+  -d, --domain DOMAIN     Base domain, e.g. example.com (derives SUBDOMAIN.DOMAIN)
+  -e, --email EMAIL       Real email address for Let's Encrypt notices
 
 Optional:
-  --subdomain NAME    Subdomain prefix (default: derp) — e.g. --subdomain
-                      derp-vm gives derp-vm.DOMAIN, so a VM test run doesn't
-                      collide with the real Pi's derp.DOMAIN
-  --derp-host HOST    Override the derived SUBDOMAIN.DOMAIN entirely
-  --derper-port PORT  Internal port derper listens on (default: 8443)
-  --stun-port PORT    STUN port, must match the router's forwarded port (default: 3478)
-  --prepare           Run only the phase with no outside-world dependency
-  --activate          Run only the phase that needs DNS/port-80 working
-                      (--email may be overridden here; --domain/--subdomain/
-                      --derp-host may not — re-run --prepare to change those)
-  --only STEPS        Run only these comma-separated steps (or bundle names)
-  --skip STEPS        Run all steps except these comma-separated ones
-  --start STEP        Resume from this step onward (skip everything before it)
-  --list-steps        Print available steps and exit
-  -h, --help          Show this help and exit
+  -s, --subdomain NAME    Subdomain prefix (default: derp) — e.g. -s derp-vm
+                          gives derp-vm.DOMAIN, so a VM test run doesn't
+                          collide with the real Pi's derp.DOMAIN
+  --derp-host HOST        Override the derived SUBDOMAIN.DOMAIN entirely
+  --derper-port PORT      Internal port derper listens on (default: 8443)
+  --stun-port PORT        STUN port, must match the router's forwarded port (default: 3478)
+  -p, --prepare           Run only the phase with no outside-world dependency
+  -a, --activate          Run only the phase that needs DNS/port-80 working
+                          (-e/--email may be overridden here; -d/-s/
+                          --derp-host may not — re-run --prepare to change those)
+  --only STEPS            Run only these comma-separated steps (or bundle names)
+  --skip STEPS            Run all steps except these comma-separated ones
+  --start STEP            Resume from this step onward (skip everything before it)
+  --list-steps            Print available steps and exit
+  -h, --help              Show this help and exit
 USAGE
 }
 
 list_steps() {
     cat << 'STEPS'
 Steps (run in this order by default):
-  install-req          Call utils/sh/install-req.sh for docker + cloudflared
+  install-req          Call utils/sh/install-req.sh for cloudflared (no Docker on the VPS)
   derper-build         Install the derper binary
   derper-service       Write + start derper's systemd service (no cert yet)
   write-ingress        Write server/cloudflared's ingress fragment for derp
@@ -85,8 +85,8 @@ Bundles (--prepare / --activate, or --only prepare / --only activate):
   activate   -> reachability-check, derper-cert, verify
                (needs DNS + port 80 actually working)
 
-Example: sudo bash setup.sh --domain example.com --prepare
-Example: sudo bash setup.sh --domain example.com --email you@example.com --activate
+Example: sudo bash setup.sh -d example.com -p
+Example: sudo bash setup.sh -d example.com -e you@example.com -a
 STEPS
 }
 
@@ -126,7 +126,7 @@ should_run() {
 # Steps
 
 step_install_req() {
-    bash "$SERVER_ROOT/utils/sh/install-req.sh" docker cloudflared
+    bash "$SERVER_ROOT/utils/sh/install-req.sh" cloudflared
 }
 
 step_derper_build() {
@@ -279,14 +279,14 @@ fi
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --domain) DOMAIN="$2"; DOMAIN_OVERRIDE="1"; shift 2 ;;
-        --subdomain) SUBDOMAIN="$2"; DOMAIN_OVERRIDE="1"; shift 2 ;;
+        -d|--domain) DOMAIN="$2"; DOMAIN_OVERRIDE="1"; shift 2 ;;
+        -s|--subdomain) SUBDOMAIN="$2"; DOMAIN_OVERRIDE="1"; shift 2 ;;
         --derp-host) DERP_HOST="$2"; DOMAIN_OVERRIDE="1"; DERP_HOST_OVERRIDE="1"; shift 2 ;;
-        --email) EMAIL="$2"; shift 2 ;;
+        -e|--email) EMAIL="$2"; shift 2 ;;
         --derper-port) DERPER_PORT="$2"; shift 2 ;;
         --stun-port) STUN_PORT="$2"; shift 2 ;;
-        --prepare) ONLY="prepare"; PREPARE_FLAG="1"; shift ;;
-        --activate) ONLY="activate"; ACTIVATE_FLAG="1"; shift ;;
+        -p|--prepare) ONLY="prepare"; PREPARE_FLAG="1"; shift ;;
+        -a|--activate) ONLY="activate"; ACTIVATE_FLAG="1"; shift ;;
         --only) ONLY="$2"; shift 2 ;;
         --skip) SKIP="$2"; shift 2 ;;
         --start) START="$2"; shift 2 ;;
