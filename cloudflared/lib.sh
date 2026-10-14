@@ -119,7 +119,10 @@ HEADER
 # Native systemd service
 
 ensure_cloudflared_service() {
-    if systemctl list-unit-files 2>/dev/null | grep -q '^cloudflared\.service'; then
+    # Checks the file on disk, not systemd's cache, which a prior
+    # interrupted run can leave stale.
+    if [ -f /etc/systemd/system/cloudflared.service ]; then
+        systemctl daemon-reload
         return
     fi
     print_info "Installing cloudflared as a systemd service"
