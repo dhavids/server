@@ -15,6 +15,7 @@ DOMAIN=""
 EMAIL=""
 SUBDOMAIN=""
 TUNNEL_PREFIX=""
+ACTIVATE_FLAG="0"
 ONLY=""
 SKIP=""
 START=""
@@ -31,9 +32,12 @@ and run this.
 
 Optional:
   -d, --domain DOMAIN   Passed through to derp/setup.sh --prepare
-  -e, --email EMAIL     Passed through to derp/setup.sh --prepare
+  -e, --email EMAIL     Passed through to derp/setup.sh --prepare/--activate
   -s, --subdomain NAME  Passed through to derp/setup.sh --prepare
   -t, --tunnel-prefix NAME  Passed through to derp/setup.sh --prepare
+  -a, --activate        Call derp/setup.sh --activate instead of --prepare
+                        (DNS must already point at this VPS — see its own
+                        --help; -d/-s/-t don't apply here, only -e)
   --only STEPS          Run only these comma-separated steps
   --skip STEPS          Run all steps except these comma-separated ones
   --start STEP          Resume from this step onward (skip everything before it)
@@ -46,10 +50,10 @@ list_steps() {
     cat << 'STEPS'
 Steps (run in this order by default):
   tailscale-up  Install Tailscale, join the tailnet (tailscale up)
-  derp-setup    Call derp/setup.sh --prepare with --domain/--email/--subdomain
+  derp-setup    Call derp/setup.sh --prepare (or --activate with -a)
 
-derp/setup.sh's own --activate phase is NOT run here — it needs DNS/port-80
-actually working, run it separately once those are confirmed in place.
+-a/--activate needs DNS/port-80 already pointed at this VPS — see
+derp/setup.sh's own --help for what that requires.
 STEPS
 }
 
@@ -95,6 +99,12 @@ step_derp_setup() {
         print_error "No tailnet IP assigned — tailscale-up must succeed before derp-setup runs."
         exit 1
     fi
+    if [ "$ACTIVATE_FLAG" = "1" ]; then
+        local args=(--activate)
+        [ -n "$EMAIL" ] && args+=(--email "$EMAIL")
+        bash "$SERVER_ROOT/derp/setup.sh" "${args[@]}"
+        return
+    fi
     local args=(--prepare)
     [ -n "$DOMAIN" ] && args+=(--domain "$DOMAIN")
     [ -n "$EMAIL" ] && args+=(--email "$EMAIL")
@@ -112,6 +122,7 @@ while [ $# -gt 0 ]; do
         -e|--email) EMAIL="$2"; shift 2 ;;
         -s|--subdomain) SUBDOMAIN="$2"; shift 2 ;;
         -t|--tunnel-prefix) TUNNEL_PREFIX="$2"; shift 2 ;;
+        -a|--activate) ACTIVATE_FLAG="1"; shift ;;
         --only) ONLY="$2"; shift 2 ;;
         --skip) SKIP="$2"; shift 2 ;;
         --start) START="$2"; shift 2 ;;
@@ -124,6 +135,11 @@ done
 require_root || { usage; exit 1; }
 require_user tunnel || exit 1
 require_hardened || exit 1
+
+if [ "$ACTIVATE_FLAG" = "1" ] && { [ -n "$DOMAIN" ] || [ -n "$SUBDOMAIN" ] || [ -n "$TUNNEL_PREFIX" ]; }; then
+    print_error "-d/-s/-t don't apply to --activate — only -e. Re-run without -a to change those."
+    exit 1
+fi
 
 
 # Run
