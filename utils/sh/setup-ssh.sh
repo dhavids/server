@@ -119,6 +119,8 @@ resolve_github_pubkey() {
 # Steps
 
 step_create_user() {
+    bash "$SERVER_ROOT/utils/sh/install-req.sh" openssh
+
     if [ -z "$PUBKEY" ] && [ -n "$GITHUB_USER" ]; then
         resolve_github_pubkey
     fi
