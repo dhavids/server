@@ -14,6 +14,7 @@ readonly SERVER_ROOT="$(dirname "$SCRIPT_DIR")"
 readonly ENV_FILE="$SCRIPT_DIR/.env"
 readonly INITDB_DIR="$SCRIPT_DIR/initdb"
 readonly GUAC_IMAGE="guacamole/guacamole:1.5.5"
+readonly VPS_SSH_KEY="/root/.ssh/vps_tunnel_ed25519"
 source "$SERVER_ROOT/utils/sh/print.sh"
 source "$SERVER_ROOT/utils/sh/guard.sh"
 source "$SERVER_ROOT/utils/sh/tailscale.sh"
@@ -203,13 +204,29 @@ step_update() {
         print_error "No tailnet IP assigned — tailscale-up must succeed before update runs."
         exit 1
     fi
+
+    if [ ! -f "$VPS_SSH_KEY" ]; then
+        mkdir -p "$(dirname "$VPS_SSH_KEY")"
+        ssh-keygen -t ed25519 -N '' -f "$VPS_SSH_KEY" -C "pi->vps update.sh access" &> /dev/null
+        print_info "Generated a new SSH key at $VPS_SSH_KEY"
+    fi
+
+    if ! ssh -o BatchMode=yes -o ConnectTimeout=5 -i "$VPS_SSH_KEY" "tunnel@$VPS_HOST" "echo ok" &> /dev/null; then
+        cat << INSTR
+Add this key to tunnel@$VPS_HOST, then come back and re-run this:
+
+  echo "$(cat "$VPS_SSH_KEY.pub")" | ssh tunnel@$VPS_HOST "cat >> ~/.ssh/authorized_keys"
+INSTR
+        exit 1
+    fi
+
     local pi_ip
     pi_ip="$(tailscale ip -4)"
     local remote_args=(--pi-ip "$pi_ip")
     [ -n "$SUBDOMAIN" ] && remote_args+=(--subdomain "$SUBDOMAIN")
     [ -n "$GUAC_PORT" ] && remote_args+=(--guac-port "$GUAC_PORT")
     print_info "Running vps/update.sh on $VPS_HOST via ssh"
-    ssh "tunnel@$VPS_HOST" "bash ~/server/vps/update.sh ${remote_args[*]}"
+    ssh -i "$VPS_SSH_KEY" "tunnel@$VPS_HOST" "bash ~/server/vps/update.sh ${remote_args[*]}"
 }
 
 
