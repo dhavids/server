@@ -145,7 +145,9 @@ step_write_env() {
         source "$ENV_FILE"
     fi
     if [ -z "$POSTGRES_PASSWORD" ]; then
-        POSTGRES_PASSWORD="$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32)"
+        # pipefail + SIGPIPE: head closing early kills tr non-zero even
+        # though the output is fine — the `|| true` absorbs that.
+        POSTGRES_PASSWORD="$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32 || true)"
         print_info "Generated a new POSTGRES_PASSWORD"
     fi
     if ! tailscale ip -4 &> /dev/null; then
