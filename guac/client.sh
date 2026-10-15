@@ -148,11 +148,11 @@ User=$CURRENT_USER
 WantedBy=multi-user.target
 SERVICE
 
+# No Requires=x11vnc.service: caused a systemd ordering cycle, and isn't needed.
 sudo tee /etc/systemd/system/vps-vnc-tunnel.service > /dev/null << SERVICE
 [Unit]
 Description=Reverse VNC tunnel to the VPS
-After=network-online.target x11vnc.service
-Requires=x11vnc.service
+After=network-online.target
 
 [Service]
 ExecStart=/usr/bin/autossh -M 0 -N \
