@@ -213,9 +213,9 @@ step_update() {
 
     if ! ssh -o BatchMode=yes -o ConnectTimeout=5 -i "$VPS_SSH_KEY" "tunnel@$VPS_HOST" "echo ok" &> /dev/null; then
         cat << INSTR
-Add this key to tunnel@$VPS_HOST, then come back and re-run this:
+On $VPS_HOST, as tunnel, run this then come back and re-run this:
 
-  echo "$(cat "$VPS_SSH_KEY.pub")" | ssh tunnel@$VPS_HOST "cat >> ~/.ssh/authorized_keys"
+echo "$(cat "$VPS_SSH_KEY.pub")" >> ~/.ssh/authorized_keys
 INSTR
         exit 1
     fi
@@ -226,7 +226,7 @@ INSTR
     [ -n "$SUBDOMAIN" ] && remote_args+=(--subdomain "$SUBDOMAIN")
     [ -n "$GUAC_PORT" ] && remote_args+=(--guac-port "$GUAC_PORT")
     print_info "Running vps/update.sh on $VPS_HOST via ssh"
-    ssh -i "$VPS_SSH_KEY" "tunnel@$VPS_HOST" "bash ~/server/vps/update.sh ${remote_args[*]}"
+    ssh -i "$VPS_SSH_KEY" "tunnel@$VPS_HOST" "sudo bash ~/server/vps/update.sh ${remote_args[*]}"
 }
 
 
