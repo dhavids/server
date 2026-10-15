@@ -84,6 +84,8 @@ done
 
 # Run
 
+command -v ssh-keygen &> /dev/null || { sudo apt-get update; sudo apt-get install -y openssh-client; }
+
 if [ ! -f "$KEY_PATH" ]; then
     ssh-keygen -t ed25519 -N '' -f "$KEY_PATH" -C "$(hostname)->vps rdp tunnel" &> /dev/null
     print_info "Generated a new SSH key at $KEY_PATH"

@@ -105,10 +105,9 @@ usermod -aG "$RDP_GROUP" "$USER_NAME"
 usermod -s /bin/sh "$USER_NAME"
 
 mkdir -p "$SSH_DIR"
-# command= forces any exec/shell request to a no-op (so a plain `ssh ...
-# "echo ok"` connectivity check still succeeds) without affecting -N
-# (autossh's actual usage never requests a shell/command at all).
-echo "restrict,command=\"/bin/true\",permitlisten=\"$VPS_TS_IP:$PORT\" $PUBKEY" > "$SSH_DIR/authorized_keys"
+# Not `restrict`: it disables forwarding entirely, which permitlisten
+# can only narrow, not re-enable. command= forces a no-op for any exec.
+echo "command=\"/bin/true\",no-pty,no-X11-forwarding,no-agent-forwarding,no-user-rc,permitlisten=\"$VPS_TS_IP:$PORT\" $PUBKEY" > "$SSH_DIR/authorized_keys"
 chmod 700 "$SSH_DIR"
 chmod 600 "$SSH_DIR/authorized_keys"
 chown -R "$USER_NAME:$USER_NAME" "$SSH_DIR"
