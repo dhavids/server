@@ -15,8 +15,15 @@ outbound connections, so CGNAT never matters to it.
 
 ## Scripts, run in order
 
-**1. `setup-ssh.sh`** — run once, as `root` (however the VPS gave you
-root — password, provider console, whatever):
+| # | Script | Runs on | Runs as |
+|---|---|---|---|
+| 1 | `setup-ssh.sh` | VPS | `root` |
+| 2 | `setup.sh` | VPS | `tunnel` |
+| 3 | `derp/setup.sh -a` | VPS | `tunnel` |
+| 4 | `update.sh` | VPS | `tunnel`, invoked from the Pi |
+| 5 | `provision-host.sh` | VPS | `tunnel`, invoked from the Pi |
+
+### 1. `setup-ssh.sh` — once, as `root`
 
 ```
 sudo bash setup-ssh.sh -g <you> -i <chars> -e <you@example.com>
@@ -27,12 +34,10 @@ Creates the `tunnel` user (full sudo), authorizes your key (from
 `-g`/`--github-user` + `-i`/`--key-id` or `-e`/`--email` to disambiguate if
 you have more than one key there), confirms the key landed in
 `authorized_keys`, then calls `utils/sh/harden.sh` — which disables
-root/password SSH login.
-**After this finishes, disconnect and reconnect as `tunnel`** — don't keep
-using the original root session.
+root/password SSH login. **After this finishes, disconnect and reconnect
+as `tunnel`.**
 
-**2. `setup.sh`** — run as `tunnel` (now has full sudo), from a fresh SSH
-session:
+### 2. `setup.sh` — as `tunnel`, fresh session
 
 ```
 sudo bash setup.sh -d example.com -e you@example.com
@@ -40,37 +45,47 @@ sudo bash setup.sh -d example.com -e you@example.com
 
 Joins the tailnet (`tailscale up`, one-time browser approval), then calls
 `derp/setup.sh --prepare` — builds derper, writes `cloudflared`'s ingress
-fragment, and brings the shared tunnel up. Does **not** run derp's
-`--activate` phase (DNS/port-80 checks + the actual cert) — that needs DNS
-pointed at this VPS first, run it separately:
+fragment, and brings the shared tunnel up.
+
+### 3. `derp/setup.sh -a` — as `tunnel`, once DNS is pointed at this VPS
 
 ```
 sudo bash ../derp/setup.sh -a
 ```
 
-Both scripts refuse to run unless invoked via `sudo` specifically as
+Runs derp's `--activate` phase (DNS/port-80 checks + the actual cert) —
+not called by `setup.sh` itself since it needs DNS pointed here first.
+
+Scripts 1–3 all refuse to run unless invoked via `sudo` specifically as
 `tunnel`, and unless `utils/sh/harden.sh`'s `ssh-harden` step has actually
 completed (checked via `/etc/server-hardened`) — see `utils/sh/guard.sh`.
 
-**3. `update.sh`** — run on the VPS (as `tunnel`), typically invoked
-remotely by the Pi over its own SSH key rather than typed in by hand, since
-the Pi already knows its own Tailscale IP:
+### 4. `update.sh` — as `tunnel`, invoked remotely from the Pi
 
 ```
-ssh tunnel@<vps-tailscale-ip> "bash ~/server/vps/update.sh --pi-ip $(tailscale ip -4)"
+ssh tunnel@<vps-tailscale-ip> "sudo bash ~/server/vps/update.sh --pi-ip $(tailscale ip -4)"
 ```
 
+Not typed in by hand — this is what `guac/setup.sh -a` runs over SSH.
 Writes guac's `cloudflared` ingress fragment on the VPS (guac runs on a
 different box, so it can't write this fragment itself the way `derp`
-does), routes DNS for the subdomain (default `guac-pi`, for testing before
-the real `guac` subdomain is wired up), and reconfigures the shared
-tunnel. No cert dance needed here — guac rides `cloudflared`'s own TLS
+does), routes DNS for the subdomain, and reconfigures the shared tunnel.
+No cert dance needed here — guac rides `cloudflared`'s own TLS
 termination.
+
+### 5. `provision-host.sh` — as `tunnel`, invoked remotely from the Pi
+
+Not typed in by hand either — this is what `guac/add-host.sh` runs over
+SSH, once per RDP host. Sets up the one-time `rdp-tunnel` sshd `Match`
+block (`GatewayPorts clientspecified`, remote forwarding only) if it isn't
+there yet, then creates that host's restricted `host-<name>` account,
+scoped via `permitlisten` to just its own assigned port on this VPS's
+Tailscale IP.
 
 ## What's deliberately not here
 
-Hosts' RDP-forwarding tunnels landing on this VPS, and the `GatewayPorts`
-config that lets guac (on the Pi) reach them — that's scoped to guac's own
-setup (not yet built), not this one. See
+RDP hosts' own tunnel scripts (`guac/client.sh`) — that's guac's concern,
+since Guacamole on the Pi is what actually reaches the ports this VPS
+forwards. See `guac/README.md` and
 `docs/research/projects/server/scratch.md` for the full architecture
-history and open items.
+history.
