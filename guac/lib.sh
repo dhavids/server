@@ -26,3 +26,26 @@ registry_remove() {
     [ -f "$REGISTRY_FILE" ] || return 0
     sed -i "/^$1 /d" "$REGISTRY_FILE"
 }
+
+# The VPS's live view of every provisioned host, as "NAME PORT" lines —
+# the actual source of truth, so two independent guac-hosts never collide.
+# Assumes VPS_SSH_KEY is already set (source utils/sh/vps_ssh.sh first).
+remote_ports() {
+    ssh -i "$VPS_SSH_KEY" "tunnel@$1" "sudo bash ~/server/vps/list-ports.sh"
+}
+
+# Prints (stdout) NAME's port on the VPS, or fails if it's not there.
+remote_port_for() {
+    remote_ports "$1" | awk -v n="$2" '$1 == n {print $2; found=1} END {exit !found}'
+}
+
+# Prints (stdout) the next port free on the VPS, starting at BASE_PORT.
+remote_next_free_port() {
+    local used max="$((BASE_PORT - 1))"
+    used="$(remote_ports "$1" | awk '{print $2}')"
+    local p
+    for p in $used; do
+        [ "$p" -gt "$max" ] && max="$p"
+    done
+    echo "$((max + 1))"
+}

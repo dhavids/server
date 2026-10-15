@@ -11,7 +11,9 @@ source "$SERVER_ROOT/utils/sh/guard.sh"
 
 readonly CONFIG_OUT="/etc/cloudflared/config.yml"
 readonly TARGET_DIRS="derp guac webserver"
-readonly FRAGMENT_NAME="cloudflared.ingress.yml"
+# Glob, not a fixed name: a target can have more than one fragment (e.g.
+# guac registering several subdomains at once, each its own guac-host).
+readonly FRAGMENT_GLOB="cloudflared.ingress*.yml"
 
 # "derp" (the default subdomain) gets the bare prefix name; any other
 # subdomain gets it as a suffix, so e.g. -s guac doesn't collide with derp's.
@@ -93,18 +95,19 @@ credentials-file: $cred_file
 ingress:
 HEADER
         for target in $TARGET_DIRS; do
-            local fragment="$SERVER_ROOT/$target/$FRAGMENT_NAME"
-            if [ -f "$fragment" ]; then
+            local fragment
+            for fragment in "$SERVER_ROOT/$target"/$FRAGMENT_GLOB; do
+                [ -f "$fragment" ] || continue
                 print_hint "Including ingress fragment: $fragment"
                 cat "$fragment"
                 found_any="1"
-            fi
+            done
         done
         printf '%s\n' "  - service: http_status:404"
     } > "$new_config"
 
     if [ "$found_any" = "0" ]; then
-        print_warn "No target ingress fragments found under $SERVER_ROOT/*/$FRAGMENT_NAME"
+        print_warn "No target ingress fragments found under $SERVER_ROOT/*/$FRAGMENT_GLOB"
     fi
 
     if [ -f "$CONFIG_OUT" ] && diff -q "$CONFIG_OUT" "$new_config" > /dev/null 2>&1; then

@@ -25,6 +25,7 @@ VPS_HOST=""
 VPS_ID=""
 VPS_PUBLIC_HOST=""
 FORCE=""
+PORT_OVERRIDE=""
 
 
 # Usage
@@ -56,9 +57,13 @@ Optional:
                          has no Tailscale, so --vps-host isn't reachable
                          from it). Auto-detected via the VPS's own
                          'curl ifconfig.me' if not given.
-  -f, --force           Re-provision NAME even if already in the registry
-                         (rotates its key/re-runs VPS provisioning; does not
-                         duplicate its Guacamole connection)
+  -f, --force           Rotate NAME's VPS key even if this guac-host
+                         already has its Guacamole connection (does not
+                         duplicate the connection)
+  --port PORT           Pin the forwarded port instead of auto-assigning —
+                         for registering the same already-provisioned NAME
+                         on a second, independent guac-host, pointed at the
+                         same VPS account/port the first one already uses
   -h, --help            Show this help and exit
 USAGE
 }
@@ -70,6 +75,17 @@ On the client, run:
 
 bash guac/client.sh --vps-ssh-host $VPS_PUBLIC_HOST --vps-bind-host $VPS_HOST --vps-user host-$NAME --port $PORT
 CMD
+}
+
+# Whether NAME already has a connection on THIS guac-host's Guacamole —
+# separate from whether the VPS account exists, since a second guac-host
+# can share that account while still needing its own connection row here.
+guac_connection_exists() {
+    local count
+    count="$(PGPASSWORD="$POSTGRES_PASSWORD" docker compose -f "$SCRIPT_DIR/docker-compose.yml" --env-file "$ENV_FILE" \
+        exec -T postgres psql -t -A -v ON_ERROR_STOP=1 -U guacamole_user -d guacamole_db \
+        -v name="$1" -c "SELECT count(*) FROM guacamole_connection WHERE connection_name = :'name';")"
+    [ "$(echo "$count" | tr -d '[:space:]')" != "0" ]
 }
 
 # Sets/replaces NAME's Guacamole 'password' param. Assumes ENV_FILE is sourced.
@@ -100,6 +116,7 @@ while [ $# -gt 0 ]; do
         -i|--vps-id) VPS_ID="$2"; shift 2 ;;
         --vps-public-host) VPS_PUBLIC_HOST="$2"; shift 2 ;;
         -f|--force) FORCE="1"; shift ;;
+        --port) PORT_OVERRIDE="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         *) print_error "Unknown flag: $1"; usage; exit 1 ;;
     esac
@@ -139,48 +156,54 @@ if [ -z "$VPS_HOST" ]; then
     print_info "No --vps-host/--vps-id given — auto-resolved to the one tailnet peer matching 'vps': $VPS_HOST"
 fi
 
-EXISTING_PORT=""
-EXISTING_PORT="$(registry_port_for "$NAME" || true)"
+ensure_vps_ssh_access "$VPS_HOST" || exit 1
 
-# Password-only update on an already-registered host: skip the --force
-# requirement and the VPS re-provisioning step, but still resolve enough
-# to print the finalize command.
-if [ -n "$VNC_PASSWORD" ] && [ -z "$FORCE" ] && [ -n "$EXISTING_PORT" ]; then
-    if [ ! -f "$ENV_FILE" ]; then
-        print_error "$ENV_FILE not found — run setup.sh --prepare first"
-        exit 1
-    fi
-    source "$ENV_FILE"
+# The VPS's live accounts are the source of truth, not the local registry
+# (which is just a cache, and can drift once more than one guac-host exists).
+EXISTING_PORT="$(remote_port_for "$VPS_HOST" "$NAME" || true)"
+LOCAL_PORT="$(registry_port_for "$NAME" || true)"
+if [ -n "$LOCAL_PORT" ] && [ "$LOCAL_PORT" != "$EXISTING_PORT" ]; then
+    print_warn "Local hosts.registry has $NAME on port $LOCAL_PORT, but the VPS says ${EXISTING_PORT:-nothing} — trusting the VPS"
+fi
+
+if [ ! -f "$ENV_FILE" ]; then
+    print_error "$ENV_FILE not found — run setup.sh --prepare first"
+    exit 1
+fi
+source "$ENV_FILE"
+
+HAS_CONNECTION=""
+guac_connection_exists "$NAME" && HAS_CONNECTION="1"
+
+# Already have a connection for NAME right here: just update its password
+# (if given) and stop, unless --force says to also rotate its VPS key.
+if [ -n "$HAS_CONNECTION" ] && [ -z "$FORCE" ]; then
     PORT="$EXISTING_PORT"
-    ensure_vps_ssh_access "$VPS_HOST" || exit 1
     if [ -z "$VPS_PUBLIC_HOST" ]; then
         VPS_PUBLIC_HOST="$(ssh -i "$VPS_SSH_KEY" "tunnel@$VPS_HOST" "curl -4 -s ifconfig.me")"
     fi
-    update_vnc_password
-    print_info "Done. $NAME's password updated, nothing else touched."
+    [ -n "$VNC_PASSWORD" ] && update_vnc_password
+    print_info "Done. $NAME's Guacamole connection already exists here, not touching it."
     print_finalize_cmd
     exit 0
 fi
 
-if [ -n "$EXISTING_PORT" ] && [ -z "$FORCE" ]; then
-    print_error "'$NAME' is already in $REGISTRY_FILE on port $EXISTING_PORT. Pass --force to re-provision it."
-    exit 1
-fi
-
 PORT="$EXISTING_PORT"
-if [ -z "$PORT" ]; then
-    PORT="$(next_free_port)"
-    mkdir -p "$SCRIPT_DIR"
-    echo "$NAME $PORT" >> "$REGISTRY_FILE"
-    print_info "Assigned $NAME port $PORT (recorded in $REGISTRY_FILE)"
+if [ -z "$PORT" ] && [ -n "$PORT_OVERRIDE" ]; then
+    PORT="$PORT_OVERRIDE"
+    print_info "Pinned $NAME to port $PORT"
+elif [ -z "$PORT" ]; then
+    PORT="$(remote_next_free_port "$VPS_HOST")"
+    print_info "Assigned $NAME port $PORT"
 else
     print_info "Re-using $NAME's existing port $PORT"
 fi
+mkdir -p "$SCRIPT_DIR"
+registry_remove "$NAME"
+echo "$NAME $PORT" >> "$REGISTRY_FILE"
 
 
 # Run
-
-ensure_vps_ssh_access "$VPS_HOST" || exit 1
 
 if [ -z "$VPS_PUBLIC_HOST" ]; then
     VPS_PUBLIC_HOST="$(ssh -i "$VPS_SSH_KEY" "tunnel@$VPS_HOST" "curl -4 -s ifconfig.me")"
@@ -194,15 +217,12 @@ print_info "Provisioning $NAME on $VPS_HOST via ssh"
 ssh -i "$VPS_SSH_KEY" "tunnel@$VPS_HOST" \
     "sudo bash ~/server/vps/provision-host.sh --name '$NAME' --port '$PORT' --pubkey '$PUBKEY'"
 
-if [ ! -f "$ENV_FILE" ]; then
-    print_error "$ENV_FILE not found — run setup.sh --prepare first"
-    exit 1
-fi
-source "$ENV_FILE"
-
-if [ -n "$EXISTING_PORT" ]; then
+# --force rotates the key above but, if the connection already existed here
+# (it must have, to even reach --force's branch past the exit above), never
+# duplicates it.
+if [ -n "$HAS_CONNECTION" ]; then
     [ -n "$VNC_PASSWORD" ] && update_vnc_password
-    print_info "Done. $NAME's Guacamole connection already exists, not touching it."
+    print_info "Done. $NAME's VPS key rotated; its existing Guacamole connection here wasn't touched."
     print_finalize_cmd
     exit 0
 fi

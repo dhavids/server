@@ -16,7 +16,6 @@ set -euo pipefail
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SERVER_ROOT="$(dirname "$SCRIPT_DIR")"
 readonly GUAC_DIR="$SERVER_ROOT/guac"
-readonly FRAGMENT_FILE="$GUAC_DIR/cloudflared.ingress.yml"
 readonly CF_ENV_FILE="$SERVER_ROOT/cloudflared/.env"
 source "$SERVER_ROOT/utils/sh/print.sh"
 source "$SERVER_ROOT/utils/sh/guard.sh"
@@ -96,6 +95,9 @@ CF_TUNNEL_NAME="$(grep '^CF_TUNNEL_NAME=' "$CF_ENV_FILE" | cut -d= -f2- | tr -d 
 # Run
 
 mkdir -p "$GUAC_DIR"
+# Named per subdomain, not a single fixed file — lets more than one guac-host
+# (e.g. guac-test on one box, guac on another) be routed at the same time.
+FRAGMENT_FILE="$GUAC_DIR/cloudflared.ingress.$SUBDOMAIN.yml"
 cat > "$FRAGMENT_FILE" << FRAGMENT
   - hostname: $GUAC_HOST
     service: http://$GUAC_IP:$GUAC_PORT

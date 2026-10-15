@@ -116,17 +116,27 @@ sudo bash add-host.sh --name win-desktop --pubkey "ssh-ed25519 AAAA..." --protoc
 
 `--pubkey` and `--vnc-password` (vnc only) are what phase a printed;
 `--protocol` must match what it decided. Assigns the client a unique
-forwarded port (tracked in `hosts.registry`, starting at `20001`, not
-committed to git), provisions a restricted account for it on the VPS over
+forwarded port, provisions a restricted account for it on the VPS over
 SSH (`vps/provision-host.sh`), and adds its connection straight into
 Guacamole's Postgres DB. Prints back the exact `client.sh` command for
 phase c (`--vps-ssh-host`, `--vps-bind-host`, `--vps-user`, `--port`).
 
-Refuses to re-provision an existing `--name` unless you pass `-f`/`--force`
-— that rotates the client's VPS key but never touches its existing
-Guacamole connection. `--vnc-password` is the one exception: passing it
-sets/updates that connection's password even on an existing `--name`,
-without `-f` or any other change.
+Port assignment and "is `--name` already provisioned" both check the VPS
+directly (`vps/list-ports.sh`, reading each `host-NAME` account's own
+`authorized_keys` — not a separate file to keep in sync), not just this
+guac-host's local `hosts.registry` cache. That's what lets a second,
+independent guac-host (e.g. a Pi alongside a test VM) register the same
+`--name` without colliding on a port the first one already has — `--port`
+can still pin one explicitly if needed, but shouldn't normally be.
+
+Whether `--name` already has a Guacamole connection is checked **here**,
+not on the VPS — that's the other half of multi-guac-host support: a
+second guac-host sharing an already-provisioned VPS account still needs
+its own connection row, created the first time it runs `add-host.sh` for
+that `--name`, no `--force` required. If it's already here, re-running
+just updates the password (if `--vnc-password` is given) and stops;
+`-f`/`--force` additionally rotates the client's VPS key, but still never
+duplicates the connection.
 
 ### c. Finalize — `client.sh --vps-ssh-host ...`
 
