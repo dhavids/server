@@ -4,8 +4,8 @@
 # dependency beyond joining the tailnet) and --activate (needs the VPS
 # reachable over the tailnet — runs vps/update.sh there, over ssh, to wire
 # guac's tunnel route). Per-host RDP provisioning (GatewayPorts, host
-# accounts, Guacamole connection entries) is separate and not built yet.
-# Root-level hardening is assumed already run separately
+# accounts, Guacamole connection entries) is separate — see add-host.sh
+# and client.sh. Root-level hardening is assumed already run separately
 # (guac/setup-ssh.sh) — this script does not harden anything.
 set -euo pipefail
 
@@ -44,7 +44,7 @@ usage() {
     cat << 'USAGE'
 Usage: sudo bash setup.sh [options]
 
-Run guac/setup-ssh.sh first, as root, then SSH in as the pi user it
+Run guac/setup-ssh.sh first, as root, then SSH in as the guac user it
 created and run this.
 
 Optional:
@@ -61,7 +61,7 @@ Optional:
                    --vps-host. If neither is given, -a auto-resolves to
                    the one tailnet peer whose hostname contains "vps" —
                    errors out if there's none or more than one.
-  -s, --subdomain NAME  Passed through to vps/update.sh (default: guac-pi)
+  -s, --subdomain NAME  Passed through to vps/update.sh (default: guac-test)
   --guac-port PORT      Passed through to vps/update.sh (default: 8080)
   --only STEPS     Run only these comma-separated steps (or bundle names)
   --skip STEPS     Run all steps except these comma-separated ones
@@ -207,9 +207,9 @@ step_update() {
 
     ensure_vps_ssh_access "$VPS_HOST" || exit 1
 
-    local pi_ip
-    pi_ip="$(tailscale ip -4)"
-    local remote_args=(--pi-ip "$pi_ip")
+    local guac_ip
+    guac_ip="$(tailscale ip -4)"
+    local remote_args=(--guac-ip "$guac_ip")
     [ -n "$SUBDOMAIN" ] && remote_args+=(--subdomain "$SUBDOMAIN")
     [ -n "$GUAC_PORT" ] && remote_args+=(--guac-port "$GUAC_PORT")
     print_info "Running vps/update.sh on $VPS_HOST via ssh"
@@ -237,7 +237,7 @@ while [ $# -gt 0 ]; do
 done
 
 require_root || { usage; exit 1; }
-require_user pi || exit 1
+require_user guac || exit 1
 require_hardened || exit 1
 
 if [ -z "$VPS_HOST" ] && [ -n "$VPS_ID" ]; then

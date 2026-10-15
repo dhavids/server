@@ -4,7 +4,7 @@
 # port, so it fills these flags itself rather than the VPS trying to
 # resolve a peer by name:
 #   ssh tunnel@<vps-tailscale-ip> \
-#     "bash ~/server/vps/update.sh -s guac-pi --pi-ip $(tailscale ip -4)"
+#     "bash ~/server/vps/update.sh -s guac-test --guac-ip $(tailscale ip -4)"
 #
 # Writes guac's cloudflared ingress fragment on the VPS (guac runs on a
 # different box, so it can't write this fragment itself the way derp
@@ -22,9 +22,9 @@ source "$SERVER_ROOT/utils/sh/print.sh"
 source "$SERVER_ROOT/utils/sh/guard.sh"
 
 DOMAIN=""
-SUBDOMAIN="guac-pi"
+SUBDOMAIN="guac-test"
 GUAC_HOST=""
-PI_IP=""
+GUAC_IP=""
 GUAC_PORT="8080"
 
 
@@ -32,15 +32,15 @@ GUAC_PORT="8080"
 
 usage() {
     cat << 'USAGE'
-Usage: sudo bash update.sh --pi-ip IP [options]
+Usage: sudo bash update.sh --guac-ip IP [options]
 
 Required:
-  --pi-ip IP              The Pi's current Tailscale IP (tailscale ip -4)
+  --guac-ip IP            The guac-host's current Tailscale IP (tailscale ip -4)
 
 Optional:
   -d, --domain DOMAIN     Base domain (derives SUBDOMAIN.DOMAIN). Defaults
                           to whatever derp/.env has cached, if not given.
-  -s, --subdomain NAME    Subdomain prefix (default: guac-pi, for testing
+  -s, --subdomain NAME    Subdomain prefix (default: guac-test, for testing
                           before the real guac subdomain is wired up)
   --guac-host HOST        Override the derived SUBDOMAIN.DOMAIN entirely
   --guac-port PORT        Port guac's webapp listens on (default: 8080)
@@ -56,7 +56,7 @@ while [ $# -gt 0 ]; do
         -d|--domain) DOMAIN="$2"; shift 2 ;;
         -s|--subdomain) SUBDOMAIN="$2"; shift 2 ;;
         --guac-host) GUAC_HOST="$2"; shift 2 ;;
-        --pi-ip) PI_IP="$2"; shift 2 ;;
+        --guac-ip) GUAC_IP="$2"; shift 2 ;;
         --guac-port) GUAC_PORT="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         *) print_error "Unknown flag: $1"; usage; exit 1 ;;
@@ -67,8 +67,8 @@ require_root || { usage; exit 1; }
 require_user tunnel || exit 1
 require_hardened || exit 1
 
-if [ -z "$PI_IP" ]; then
-    print_error "--pi-ip is required"
+if [ -z "$GUAC_IP" ]; then
+    print_error "--guac-ip is required"
     usage
     exit 1
 fi
@@ -98,9 +98,9 @@ CF_TUNNEL_NAME="$(grep '^CF_TUNNEL_NAME=' "$CF_ENV_FILE" | cut -d= -f2- | tr -d 
 mkdir -p "$GUAC_DIR"
 cat > "$FRAGMENT_FILE" << FRAGMENT
   - hostname: $GUAC_HOST
-    service: http://$PI_IP:$GUAC_PORT
+    service: http://$GUAC_IP:$GUAC_PORT
 FRAGMENT
-print_info "Wrote $FRAGMENT_FILE ($GUAC_HOST -> $PI_IP:$GUAC_PORT)"
+print_info "Wrote $FRAGMENT_FILE ($GUAC_HOST -> $GUAC_IP:$GUAC_PORT)"
 
 print_info "Routing DNS for $GUAC_HOST to tunnel '$CF_TUNNEL_NAME'"
 cloudflared tunnel route dns --overwrite-dns "$CF_TUNNEL_NAME" "$GUAC_HOST"

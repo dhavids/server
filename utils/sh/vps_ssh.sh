@@ -11,7 +11,7 @@ ensure_vps_ssh_access() {
 
     if [ ! -f "$VPS_SSH_KEY" ]; then
         mkdir -p "$(dirname "$VPS_SSH_KEY")"
-        ssh-keygen -t ed25519 -N '' -f "$VPS_SSH_KEY" -C "pi->vps tunnel access" &> /dev/null
+        ssh-keygen -t ed25519 -N '' -f "$VPS_SSH_KEY" -C "guac-host->vps tunnel access" &> /dev/null
         print_info "Generated a new SSH key at $VPS_SSH_KEY"
     fi
 

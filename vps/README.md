@@ -5,14 +5,6 @@ Tailscale DERP relay) and the shared `cloudflared` tunnel both run here,
 natively — no Docker, no containers. Run first, before `derp/` or
 `cloudflared/`.
 
-## Why a VPS at all
-
-The Pi's home ISP uses CGNAT by default, so no router port-forward can ever
-make it reachable from the internet — that's a hard network constraint, not
-a config problem. The VPS is the one box that actually has a real public
-IP. The Pi joins the same Tailscale network as the VPS and only ever makes
-outbound connections, so CGNAT never matters to it.
-
 ## Scripts, run in order
 
 | # | Script | Runs on | Runs as |
@@ -20,8 +12,9 @@ outbound connections, so CGNAT never matters to it.
 | 1 | `setup-ssh.sh` | VPS | `root` |
 | 2 | `setup.sh` | VPS | `tunnel` |
 | 3 | `derp/setup.sh -a` | VPS | `tunnel` |
-| 4 | `update.sh` | VPS | `tunnel`, invoked from the Pi |
-| 5 | `provision-host.sh` | VPS | `tunnel`, invoked from the Pi |
+| 4 | `update.sh` | VPS | `tunnel`, invoked from the guac-host |
+| 5 | `provision-host.sh` | VPS | `tunnel`, invoked from the guac-host |
+| 6 | `deprovision-host.sh` | VPS | `tunnel`, invoked from the guac-host |
 
 ### 1. `setup-ssh.sh` — once, as `root`
 
@@ -60,10 +53,10 @@ Scripts 1–3 all refuse to run unless invoked via `sudo` specifically as
 `tunnel`, and unless `utils/sh/harden.sh`'s `ssh-harden` step has actually
 completed (checked via `/etc/server-hardened`) — see `utils/sh/guard.sh`.
 
-### 4. `update.sh` — as `tunnel`, invoked remotely from the Pi
+### 4. `update.sh` — as `tunnel`, invoked remotely from the guac-host
 
 ```
-ssh tunnel@<vps-tailscale-ip> "sudo bash ~/server/vps/update.sh --pi-ip $(tailscale ip -4)"
+ssh tunnel@<vps-tailscale-ip> "sudo bash ~/server/vps/update.sh --guac-ip $(tailscale ip -4)"
 ```
 
 Not typed in by hand — this is what `guac/setup.sh -a` runs over SSH.
@@ -73,19 +66,25 @@ does), routes DNS for the subdomain, and reconfigures the shared tunnel.
 No cert dance needed here — guac rides `cloudflared`'s own TLS
 termination.
 
-### 5. `provision-host.sh` — as `tunnel`, invoked remotely from the Pi
+### 5. `provision-host.sh` — as `tunnel`, invoked remotely from the guac-host
 
 Not typed in by hand either — this is what `guac/add-host.sh` runs over
-SSH, once per RDP host. Sets up the one-time `rdp-tunnel` sshd `Match`
+SSH, once per client. Sets up the one-time `rdp-tunnel` sshd `Match`
 block (`GatewayPorts clientspecified`, remote forwarding only) if it isn't
-there yet, then creates that host's restricted `host-<name>` account,
+there yet, then creates that client's restricted `host-<name>` account,
 scoped via `permitlisten` to just its own assigned port on this VPS's
 Tailscale IP.
 
+### 6. `deprovision-host.sh` — as `tunnel`, invoked remotely from the guac-host
+
+Not typed in by hand either — this is what `guac/remove-host.sh` runs over
+SSH. Removes one client's `host-<name>` account. The one-time `rdp-tunnel`
+group/Match block is left in place — other clients still use it.
+
 ## What's deliberately not here
 
-RDP hosts' own tunnel scripts (`guac/client.sh`) — that's guac's concern,
-since Guacamole on the Pi is what actually reaches the ports this VPS
-forwards. See `guac/README.md` and
+Clients' own tunnel scripts (`guac/client.sh`) — that's guac's concern,
+since Guacamole on the guac-host is what actually reaches the ports this
+VPS forwards. See `guac/README.md` and
 `docs/research/projects/server/scratch.md` for the full architecture
 history.

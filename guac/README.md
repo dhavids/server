@@ -1,26 +1,32 @@
 # guac
 
-Stands up Guacamole on the Pi (`guacd` + `guacamole` webapp + `postgres`,
-via Docker) and wires up RDP hosts behind it. Run after `vps/` is live.
-
-## Why the Pi, and why Docker here but not on the VPS
-
-The Pi has no public IP (CGNAT) so it can't run anything that needs one
-directly — but it doesn't need to: it joins the same Tailscale network as
-the VPS, purely outbound, and the VPS's `cloudflared` reaches Guacamole's
-webapp over the tailnet instead of `localhost`. Docker is fine here since
-nothing on the Pi needs host networking the way derper's STUN did on the
-VPS.
+Stands up Guacamole on the guac-host (`guacd` + `guacamole` webapp +
+`postgres`, via Docker) and wires up clients behind it. Run after `vps/`
+is live.
 
 ## Scripts, run in order
 
 | # | Script | Runs on | Runs as |
 |---|---|---|---|
-| 1 | `setup-ssh.sh` | Pi | `root` |
-| 2 | `setup.sh` | Pi | `pi` |
-| 3 | `setup.sh -a` | Pi | `pi` |
-| 4 | `add-host.sh` | Pi | `pi` |
-| 5 | `client.sh` | the RDP host | any sudo user |
+| 1 | `setup-ssh.sh` | guac-host | `root` |
+| 2 | `setup.sh` | guac-host | `guac` |
+| 3 | `setup.sh -a` | guac-host | `guac` |
+
+Steps 1–3 run once, for the guac-host itself. After that, adding a client
+is a three-phase loop — get its key, provision it, finalize it — repeated
+once per client:
+
+| Phase | Script | Runs on | Runs as |
+|---|---|---|---|
+| a. Get the pubkey | `client.sh --print-key` | client | any sudo user |
+| b. Provision | `add-host.sh` | guac-host | `guac` |
+| c. Finalize | `client.sh --vps-ssh-host ...` | client | any sudo user |
+
+Removing a client is one script, run on the guac-host:
+
+```
+sudo bash remove-host.sh --name win-desktop
+```
 
 ### 1. `setup-ssh.sh` — once, as `root`
 
@@ -28,12 +34,12 @@ VPS.
 sudo bash setup-ssh.sh -g <you> -i <chars> -e <you@example.com>
 ```
 
-Thin wrapper around `utils/sh/setup-ssh.sh --user pi` — creates the `pi`
+Thin wrapper around `utils/sh/setup-ssh.sh --user guac` — creates the `guac`
 user (full sudo), authorizes your key, confirms it landed in
 `authorized_keys`, then calls `utils/sh/harden.sh`. **After this finishes,
-disconnect and reconnect as `pi`.**
+disconnect and reconnect as `guac`.**
 
-### 2. `setup.sh` — as `pi`, fresh session
+### 2. `setup.sh` — as `guac`, fresh session
 
 ```
 sudo bash setup.sh
@@ -41,12 +47,12 @@ sudo bash setup.sh
 
 Defaults to `--prepare`: installs Docker, joins the tailnet, generates
 Guacamole's Postgres schema (once), writes `.env` (`POSTGRES_PASSWORD` +
-the Pi's `TAILSCALE_IP`), then `docker compose up -d`. The webapp binds to
-the Pi's **Tailscale IP** specifically — not `127.0.0.1` (the VPS's
-`cloudflared` reaches it over the tailnet, from a different box) and not
-`0.0.0.0` (Docker's published ports bypass `ufw`).
+the guac-host's `TAILSCALE_IP`), then `docker compose up -d`. The webapp
+binds to the guac-host's **Tailscale IP** specifically — not `127.0.0.1`
+(the VPS's `cloudflared` reaches it over the tailnet, from a different
+box) and not `0.0.0.0` (Docker's published ports bypass `ufw`).
 
-### 3. `setup.sh -a` — as `pi`, once the VPS is reachable over the tailnet
+### 3. `setup.sh -a` — as `guac`, once the VPS is reachable over the tailnet
 
 ```
 sudo bash setup.sh -a
@@ -57,19 +63,20 @@ shared `cloudflared` tunnel (ingress fragment, DNS route, reconfigure).
 Auto-resolves `--vps-host` to the one tailnet peer matching "vps" (pass
 `--vps-host`/`-i` if there's more than one).
 
-Defaults to the test subdomain `guac-pi` (`-s/--subdomain` to override).
-Switch to the real subdomain later by just re-running:
+Defaults to the test subdomain `guac-test` (`-s/--subdomain` to override).
+Moving from the test subdomain to the real one is just re-running with it:
 
 ```
 sudo bash setup.sh -a -s guac
 ```
 
-This is additive — it won't remove the old `guac-pi` CNAME. Delete that
-from the Cloudflare dashboard yourself if you want it gone.
+You'll have to remove the test subdomain's CNAME yourself (Cloudflare
+dashboard) — this is additive, it won't do that for you.
 
-First run needs a one-time SSH key handshake: this box generates its own
-key (`/root/.ssh/vps_tunnel_ed25519`), and if the VPS doesn't recognize it
-yet, prints the exact command to run **on the VPS, as `tunnel`**:
+First run needs a one-time SSH key handshake: the guac-host generates its
+own key (`/root/.ssh/vps_tunnel_ed25519`), and if the VPS doesn't
+recognize it yet, prints the exact command to run **on the VPS, as
+`tunnel`**:
 
 ```
 echo "<pubkey>" >> ~/.ssh/authorized_keys
@@ -77,45 +84,75 @@ echo "<pubkey>" >> ~/.ssh/authorized_keys
 
 Re-run `setup.sh -a` once that's done.
 
-### 4. `add-host.sh` — as `pi`, once per RDP host
+### a. Get the pubkey — `client.sh --print-key`
 
-```
-sudo bash add-host.sh --name win-desktop --pubkey "ssh-ed25519 AAAA..."
-```
-
-`--pubkey` is the host's own key — get it by running `client.sh
---print-key` on the host first (step 5). Assigns the host a unique
-forwarded port (tracked in `hosts.registry`, starting at `20001`, not
-committed to git), provisions a restricted account for it on the VPS over
-SSH (`vps/provision-host.sh`), and adds its RDP connection straight into
-Guacamole's Postgres DB. Prints back `--vps-host`, `--vps-user`, and
-`--port` for step 5.
-
-Refuses to re-provision an existing `--name` unless you pass `-f`/`--force`
-— that rotates the host's VPS key but never touches its existing Guacamole
-connection.
-
-### 5. `client.sh` — on the RDP host itself
-
-Not copied anywhere by `setup-ssh.sh` — clone this repo onto the host (or
-just copy this file plus `utils/sh/print.sh`) and run it there directly.
+**On the client (the RDP host)**: not copied anywhere by `setup-ssh.sh` —
+clone this repo onto it (or just copy this file plus `utils/sh/print.sh`)
+and run it there directly:
 
 ```
 bash client.sh --print-key
 ```
 
-Generates the host's dedicated keypair, prints its public half for step 4.
+Generates the client's dedicated keypair and prints its public half —
+hand that to phase b.
+
+### b. Provision — `add-host.sh`
+
+**On the guac-host, as `guac`**:
 
 ```
-bash client.sh --vps-host 100.x.x.x --vps-user host-win-desktop --port 20001
+sudo bash add-host.sh --name win-desktop --pubkey "ssh-ed25519 AAAA..."
 ```
 
-With the values step 4 printed back: installs `autossh` and a systemd
-service (`vps-rdp-tunnel`) forwarding the host's local RDP port (`3389`
-default, `--rdp-port` to override) to its assigned port on the VPS. Safe
-to re-run.
+`--pubkey` is the key phase a printed. Assigns the client a unique
+forwarded port (tracked in `hosts.registry`, starting at `20001`, not
+committed to git), provisions a restricted account for it on the VPS over
+SSH (`vps/provision-host.sh`), and adds its RDP connection straight into
+Guacamole's Postgres DB. Prints back the exact `client.sh` command for
+phase c (`--vps-ssh-host`, `--vps-bind-host`, `--vps-user`, `--port`).
 
-## What restricts a host to just its own port
+Refuses to re-provision an existing `--name` unless you pass `-f`/`--force`
+— that rotates the client's VPS key but never touches its existing
+Guacamole connection.
+
+### c. Finalize — `client.sh --vps-ssh-host ...`
+
+**Back on the client (the RDP host)**, with the command phase b printed:
+
+```
+bash client.sh --vps-ssh-host 203.0.113.10 --vps-bind-host 100.x.x.x --vps-user host-win-desktop --port 20001
+```
+
+Two different VPS addresses, both needed: `--vps-ssh-host` (the VPS's
+**public** IP — the client has no Tailscale, so it's the only address it
+can reach to make the SSH connection) and `--vps-bind-host` (the VPS's
+**Tailscale** IP — the forwarded port's bind address, which `permitlisten`
+restricts it to server-side, so only the guac-host can reach it over the
+tailnet).
+
+Installs `autossh` and a systemd service (`vps-rdp-tunnel`) forwarding the
+client's local RDP port (`3389` default, `--rdp-port` to override) to its
+assigned port on the VPS. Safe to re-run.
+
+### Removing a client — `remove-host.sh`
+
+**On the guac-host, as `guac`**:
+
+```
+sudo bash remove-host.sh --name win-desktop
+```
+
+Undoes phases a–c's provisioning: removes `host-win-desktop` on the VPS
+(over SSH, via `vps/deprovision-host.sh`), deletes the Guacamole
+connection, and drops the entry from `hosts.registry`. Prompts for
+confirmation unless `-y`/`--yes` is given.
+
+Doesn't touch the client itself — its `vps-rdp-tunnel` systemd service
+just starts failing to connect once the VPS account is gone. Disable it
+there by hand: `sudo systemctl disable --now vps-rdp-tunnel`.
+
+## What restricts a client to just its own port
 
 `provision-host.sh`'s one-time `Match Group rdp-tunnel` sshd block
 (`GatewayPorts clientspecified`, `AllowTcpForwarding remote`) lets the
@@ -125,14 +162,8 @@ the key is refused for any bind except that exact address:port.
 
 ## Guards
 
-Scripts that run on the Pi (`setup-ssh.sh`, `setup.sh`, `add-host.sh`)
-refuse to run unless invoked via `sudo` specifically as `pi`, and unless
-`utils/sh/harden.sh`'s `ssh-harden` step has completed — see
-`utils/sh/guard.sh`. `client.sh` runs on a different box entirely, so it
-has no such guard.
-
-## What's deliberately not here
-
-`tunnel-sshd` / the RDP-forwarding path isn't a container here — it's the
-**VPS's** native `sshd`, configured by `add-host.sh` over the `tunnel`
-user's SSH access `vps/setup.sh` already established.
+Scripts that run on the guac-host (`setup-ssh.sh`, `setup.sh`,
+`add-host.sh`) refuse to run unless invoked via `sudo` specifically as
+`guac`, and unless `utils/sh/harden.sh`'s `ssh-harden` step has completed —
+see `utils/sh/guard.sh`. `client.sh` runs on a different box entirely, so
+it has no such guard.

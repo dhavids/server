@@ -1,9 +1,9 @@
 #!/bin/bash
-# Run on the Pi (as pi), once per RDP host: allocates it a unique forwarded
-# port, provisions a restricted account for it on the VPS (over ssh, via
-# vps/provision-host.sh), and adds its RDP connection to Guacamole. The
-# host itself still needs client.sh run on it, with the port this
-# prints.
+# Run on the guac-host (as guac), once per RDP host: allocates it a unique
+# forwarded port, provisions a restricted account for it on the VPS (over
+# ssh, via vps/provision-host.sh), and adds its RDP connection to
+# Guacamole. The host itself still needs client.sh run on it, with the
+# port this prints.
 set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,11 +15,13 @@ source "$SERVER_ROOT/utils/sh/print.sh"
 source "$SERVER_ROOT/utils/sh/guard.sh"
 source "$SERVER_ROOT/utils/sh/tailscale.sh"
 source "$SERVER_ROOT/utils/sh/vps_ssh.sh"
+source "$SCRIPT_DIR/lib.sh"
 
 NAME=""
 PUBKEY=""
 VPS_HOST=""
 VPS_ID=""
+VPS_PUBLIC_HOST=""
 FORCE=""
 
 
@@ -36,36 +38,22 @@ Required:
                      content (print it with client.sh's --print-key)
 
 Optional:
-  --vps-host HOST   VPS's Tailscale IP/hostname
-  -i, --vps-id ID   VPS's <hostname-prefix>-<ip-suffix>, resolved via
-                     'tailscale status' — alternative to --vps-host. If
-                     neither is given, auto-resolves to the one tailnet
-                     peer whose hostname contains "vps".
-  -f, --force       Re-provision NAME even if already in the registry
-                     (rotates its key/re-runs VPS provisioning; does not
-                     duplicate its Guacamole connection)
-  -h, --help        Show this help and exit
+  --vps-host HOST       VPS's Tailscale IP/hostname — reached from here,
+                         and the bind address the host's forwarded port
+                         gets restricted to (so only the Pi can reach it)
+  -i, --vps-id ID       VPS's <hostname-prefix>-<ip-suffix>, resolved via
+                         'tailscale status' — alternative to --vps-host. If
+                         neither is given, auto-resolves to the one tailnet
+                         peer whose hostname contains "vps".
+  --vps-public-host IP  VPS's public IP/hostname, for the host to use (it
+                         has no Tailscale, so --vps-host isn't reachable
+                         from it). Auto-detected via the VPS's own
+                         'curl ifconfig.me' if not given.
+  -f, --force           Re-provision NAME even if already in the registry
+                         (rotates its key/re-runs VPS provisioning; does not
+                         duplicate its Guacamole connection)
+  -h, --help            Show this help and exit
 USAGE
-}
-
-
-# Registry: "NAME PORT" lines, one per host
-
-registry_port_for() {
-    [ -f "$REGISTRY_FILE" ] || return 1
-    awk -v n="$1" '$1 == n {print $2; found=1} END {exit !found}' "$REGISTRY_FILE"
-}
-
-next_free_port() {
-    local used max="$((BASE_PORT - 1))"
-    if [ -f "$REGISTRY_FILE" ]; then
-        used="$(awk '{print $2}' "$REGISTRY_FILE")"
-        local p
-        for p in $used; do
-            [ "$p" -gt "$max" ] && max="$p"
-        done
-    fi
-    echo "$((max + 1))"
 }
 
 
@@ -77,6 +65,7 @@ while [ $# -gt 0 ]; do
         --pubkey) PUBKEY="$2"; shift 2 ;;
         --vps-host) VPS_HOST="$2"; shift 2 ;;
         -i|--vps-id) VPS_ID="$2"; shift 2 ;;
+        --vps-public-host) VPS_PUBLIC_HOST="$2"; shift 2 ;;
         -f|--force) FORCE="1"; shift ;;
         -h|--help) usage; exit 0 ;;
         *) print_error "Unknown flag: $1"; usage; exit 1 ;;
@@ -84,7 +73,7 @@ while [ $# -gt 0 ]; do
 done
 
 require_root || { usage; exit 1; }
-require_user pi || exit 1
+require_user guac || exit 1
 require_hardened || exit 1
 
 if [ -z "$NAME" ] || [ -z "$PUBKEY" ]; then
@@ -126,7 +115,18 @@ else
     print_info "Re-using $NAME's existing port $PORT"
 fi
 
+
+# Run
+
 ensure_vps_ssh_access "$VPS_HOST" || exit 1
+
+if [ -z "$VPS_PUBLIC_HOST" ]; then
+    VPS_PUBLIC_HOST="$(ssh -i "$VPS_SSH_KEY" "tunnel@$VPS_HOST" "curl -4 -s ifconfig.me")"
+    if [ -z "$VPS_PUBLIC_HOST" ]; then
+        print_error "Couldn't detect the VPS's public IP — pass --vps-public-host"
+        exit 1
+    fi
+fi
 
 print_info "Provisioning $NAME on $VPS_HOST via ssh"
 ssh -i "$VPS_SSH_KEY" "tunnel@$VPS_HOST" \
@@ -134,7 +134,7 @@ ssh -i "$VPS_SSH_KEY" "tunnel@$VPS_HOST" \
 
 if [ -n "$EXISTING_PORT" ]; then
     print_info "Done. $NAME's Guacamole connection already exists, not touching it."
-    print_info "On the host, run client.sh with --vps-host $VPS_HOST --port $PORT --vps-user host-$NAME."
+    print_info "On the host, run client.sh with --vps-ssh-host $VPS_PUBLIC_HOST --vps-bind-host $VPS_HOST --port $PORT --vps-user host-$NAME."
     exit 0
 fi
 
@@ -169,4 +169,4 @@ WHERE e.name = 'guacadmin' AND e.type = 'USER';
 SQL
 
 print_info "Done. Guacamole connection '$NAME' -> $VPS_HOST:$PORT created."
-print_info "On the host, run client.sh with --vps-host $VPS_HOST --port $PORT --vps-user host-$NAME."
+print_info "On the host, run client.sh with --vps-ssh-host $VPS_PUBLIC_HOST --vps-bind-host $VPS_HOST --port $PORT --vps-user host-$NAME."
