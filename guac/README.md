@@ -101,28 +101,32 @@ before anything else happens) since `x11vnc` attaches to the client's own
 live desktop, not a fresh one like `rdp` (`xrdp`) does — if this client is
 on Wayland (Ubuntu's GNOME default), either switch the session to Xorg
 first or re-run with `--protocol rdp`. Generates the client's dedicated
-keypair, records the protocol choice, and prints the public half — hand
-both to phase b.
+keypair, records the protocol choice, and — for `vnc` — a password too
+(`x11vnc` otherwise runs with no auth at all). Prints one paste-ready
+flags fragment (`--pubkey ... --protocol ... --vnc-password ...`) to
+append onto phase b's `add-host.sh --name ... --vps-host ...`.
 
 ### b. Provision — `add-host.sh`
 
 **On the guac-host, as `guac`**:
 
 ```
-sudo bash add-host.sh --name win-desktop --pubkey "ssh-ed25519 AAAA..." --protocol vnc
+sudo bash add-host.sh --name win-desktop --pubkey "ssh-ed25519 AAAA..." --protocol vnc --vnc-password "..."
 ```
 
-`--pubkey` is the key phase a printed; `--protocol` must match what it
-decided. Assigns the client a unique forwarded port (tracked in
-`hosts.registry`, starting at `20001`, not committed to git), provisions
-a restricted account for it on the VPS over SSH (`vps/provision-host.sh`),
-and adds its connection straight into Guacamole's Postgres DB. Prints
-back the exact `client.sh` command for phase c (`--vps-ssh-host`,
-`--vps-bind-host`, `--vps-user`, `--port`).
+`--pubkey` and `--vnc-password` (vnc only) are what phase a printed;
+`--protocol` must match what it decided. Assigns the client a unique
+forwarded port (tracked in `hosts.registry`, starting at `20001`, not
+committed to git), provisions a restricted account for it on the VPS over
+SSH (`vps/provision-host.sh`), and adds its connection straight into
+Guacamole's Postgres DB. Prints back the exact `client.sh` command for
+phase c (`--vps-ssh-host`, `--vps-bind-host`, `--vps-user`, `--port`).
 
 Refuses to re-provision an existing `--name` unless you pass `-f`/`--force`
 — that rotates the client's VPS key but never touches its existing
-Guacamole connection.
+Guacamole connection. `--vnc-password` is the one exception: passing it
+sets/updates that connection's password even on an existing `--name`,
+without `-f` or any other change.
 
 ### c. Finalize — `client.sh --vps-ssh-host ...`
 

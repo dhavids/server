@@ -34,6 +34,8 @@ readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SERVER_ROOT="$(dirname "$SCRIPT_DIR")"
 readonly KEY_PATH="$HOME/.ssh/vps_tunnel_ed25519"
 readonly PROTOCOL_FILE="$HOME/.ssh/vps_tunnel_protocol"
+readonly VNC_PASSWORD_FILE="$HOME/.ssh/vps_tunnel_vnc_password"
+readonly VNC_AUTH_FILE="$HOME/.vnc/vps_tunnel_passwd"
 source "$SERVER_ROOT/utils/sh/print.sh"
 
 VPS_SSH_HOST=""
@@ -126,10 +128,20 @@ if [ -n "$PRINT_KEY" ]; then
     fi
     echo "$PROTOCOL" > "$PROTOCOL_FILE"
 
-    cat << KEY
-Give this to guac/add-host.sh --pubkey on the guac-host, along with --protocol $PROTOCOL:
+    EXTRA_FLAGS=""
+    if [ "$PROTOCOL" = "vnc" ]; then
+        if [ ! -f "$VNC_PASSWORD_FILE" ]; then
+            openssl rand -hex 8 > "$VNC_PASSWORD_FILE"
+            chmod 600 "$VNC_PASSWORD_FILE"
+            print_info "Generated a VNC password at $VNC_PASSWORD_FILE"
+        fi
+        EXTRA_FLAGS=" --vnc-password $(cat "$VNC_PASSWORD_FILE")"
+    fi
 
-$(cat "$KEY_PATH.pub")
+    cat << KEY
+On the guac-host, run add-host.sh with --name and --vps-host filled in, plus these flags:
+
+--pubkey "$(cat "$KEY_PATH.pub")" --protocol $PROTOCOL$EXTRA_FLAGS
 KEY
     exit 0
 fi
@@ -150,7 +162,7 @@ if [ -z "$VPS_SSH_HOST" ] || [ -z "$VPS_BIND_HOST" ] || [ -z "$VPS_USER" ] || [ 
     exit 1
 fi
 
-if ! ssh -o BatchMode=yes -o ConnectTimeout=5 -p "$VPS_SSH_PORT" -i "$KEY_PATH" \
+if ! ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new -p "$VPS_SSH_PORT" -i "$KEY_PATH" \
     "$VPS_USER@$VPS_SSH_HOST" "echo ok" &> /dev/null; then
     print_error "$VPS_USER@$VPS_SSH_HOST doesn't accept this key yet. Run --print-key and give it to guac/add-host.sh first."
     exit 1
@@ -169,6 +181,13 @@ if ss -tln 2> /dev/null | grep -q ":$LOCAL_PORT "; then
     print_info "Something's already listening on 127.0.0.1:$LOCAL_PORT — reusing it, not installing/starting $PROTOCOL's server"
 elif [ "$PROTOCOL" = "vnc" ]; then
     command -v x11vnc &> /dev/null || { sudo apt-get update; sudo apt-get install -y x11vnc; }
+    if [ ! -f "$VNC_PASSWORD_FILE" ]; then
+        openssl rand -hex 8 > "$VNC_PASSWORD_FILE"
+        chmod 600 "$VNC_PASSWORD_FILE"
+        print_info "No VNC password on record — generated one, but it won't match what Guacamole has unless you also re-run add-host.sh --vnc-password $(cat "$VNC_PASSWORD_FILE")"
+    fi
+    mkdir -p "$(dirname "$VNC_AUTH_FILE")"
+    x11vnc -storepasswd "$(cat "$VNC_PASSWORD_FILE")" "$VNC_AUTH_FILE" &> /dev/null
     # -noxdamage: XDAMAGE-based screen grabs crash (BadMatch) under some
     # compositing window managers; x11vnc falls back to plain polling without it.
     sudo tee /etc/systemd/system/x11vnc.service > /dev/null << SERVICE
@@ -179,7 +198,7 @@ After=graphical.target
 [Service]
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=$HOME/.Xauthority
-ExecStart=/usr/bin/x11vnc -display :0 -auth $HOME/.Xauthority -rfbport $LOCAL_PORT -forever -shared -noxdamage
+ExecStart=/usr/bin/x11vnc -display :0 -auth $HOME/.Xauthority -rfbport $LOCAL_PORT -forever -shared -noxdamage -rfbauth $VNC_AUTH_FILE
 Restart=always
 RestartSec=5
 User=$CURRENT_USER
@@ -188,7 +207,8 @@ User=$CURRENT_USER
 WantedBy=multi-user.target
 SERVICE
     sudo systemctl daemon-reload
-    sudo systemctl enable --now x11vnc
+    sudo systemctl enable x11vnc
+    sudo systemctl restart x11vnc
 else
     command -v xrdp &> /dev/null || { sudo apt-get update; sudo apt-get install -y xrdp; }
     sudo systemctl enable --now xrdp
