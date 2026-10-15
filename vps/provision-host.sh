@@ -96,10 +96,13 @@ readonly SSH_DIR="/home/$USER_NAME/.ssh"
 if id "$USER_NAME" &> /dev/null; then
     print_info "User $USER_NAME already exists — updating its key/port"
 else
-    useradd -m -s /usr/sbin/nologin -G "$RDP_GROUP" "$USER_NAME"
+    # Not nologin: sshd runs authorized_keys' command= through the
+    # account's shell, and nologin ignores -c instead of running it.
+    useradd -m -s /bin/sh -G "$RDP_GROUP" "$USER_NAME"
     print_info "Created user $USER_NAME"
 fi
 usermod -aG "$RDP_GROUP" "$USER_NAME"
+usermod -s /bin/sh "$USER_NAME"
 
 mkdir -p "$SSH_DIR"
 # command= forces any exec/shell request to a no-op (so a plain `ssh ...
