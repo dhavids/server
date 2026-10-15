@@ -84,7 +84,10 @@ guac_connection_exists() {
     local count
     count="$(PGPASSWORD="$POSTGRES_PASSWORD" docker compose -f "$SCRIPT_DIR/docker-compose.yml" --env-file "$ENV_FILE" \
         exec -T postgres psql -t -A -v ON_ERROR_STOP=1 -U guacamole_user -d guacamole_db \
-        -v name="$1" -c "SELECT count(*) FROM guacamole_connection WHERE connection_name = :'name';")"
+        -v name="$1" << 'SQL'
+SELECT count(*) FROM guacamole_connection WHERE connection_name = :'name';
+SQL
+)"
     [ "$(echo "$count" | tr -d '[:space:]')" != "0" ]
 }
 

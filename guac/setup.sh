@@ -148,13 +148,17 @@ step_tailscale_up() {
 }
 
 step_init_schema() {
-    if [ -f "$INITDB_DIR/01-schema.sql" ]; then
+    if [ -s "$INITDB_DIR/01-schema.sql" ]; then
         print_info "initdb/01-schema.sql already present"
         return
     fi
     print_info "Generating Guacamole's Postgres schema from $GUAC_IMAGE"
     mkdir -p "$INITDB_DIR"
-    docker run --rm "$GUAC_IMAGE" /opt/guacamole/bin/initdb.sh --postgresql > "$INITDB_DIR/01-schema.sql"
+    if ! docker run --rm "$GUAC_IMAGE" /opt/guacamole/bin/initdb.sh --postgresql > "$INITDB_DIR/01-schema.sql"; then
+        rm -f "$INITDB_DIR/01-schema.sql"
+        print_error "Schema generation failed — see docker's error above"
+        exit 1
+    fi
 }
 
 step_write_env() {
