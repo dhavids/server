@@ -130,19 +130,6 @@ if [ -f "$PUBKEY" ]; then
     PUBKEY="$(cat "$PUBKEY")"
 fi
 
-# Password-only update on an already-registered host: no need for --force,
-# and no need to touch the VPS at all.
-if [ -n "$VNC_PASSWORD" ] && [ -z "$FORCE" ] && registry_port_for "$NAME" &> /dev/null; then
-    if [ ! -f "$ENV_FILE" ]; then
-        print_error "$ENV_FILE not found — run setup.sh --prepare first"
-        exit 1
-    fi
-    source "$ENV_FILE"
-    update_vnc_password
-    print_info "Done. $NAME's password updated, nothing else touched."
-    exit 0
-fi
-
 if [ -z "$VPS_HOST" ] && [ -n "$VPS_ID" ]; then
     VPS_HOST="$(resolve_tailscale_peer "$VPS_ID")" || exit 1
     print_info "Resolved --vps-id '$VPS_ID' to $VPS_HOST"
@@ -154,6 +141,27 @@ fi
 
 EXISTING_PORT=""
 EXISTING_PORT="$(registry_port_for "$NAME" || true)"
+
+# Password-only update on an already-registered host: skip the --force
+# requirement and the VPS re-provisioning step, but still resolve enough
+# to print the finalize command.
+if [ -n "$VNC_PASSWORD" ] && [ -z "$FORCE" ] && [ -n "$EXISTING_PORT" ]; then
+    if [ ! -f "$ENV_FILE" ]; then
+        print_error "$ENV_FILE not found — run setup.sh --prepare first"
+        exit 1
+    fi
+    source "$ENV_FILE"
+    PORT="$EXISTING_PORT"
+    ensure_vps_ssh_access "$VPS_HOST" || exit 1
+    if [ -z "$VPS_PUBLIC_HOST" ]; then
+        VPS_PUBLIC_HOST="$(ssh -i "$VPS_SSH_KEY" "tunnel@$VPS_HOST" "curl -4 -s ifconfig.me")"
+    fi
+    update_vnc_password
+    print_info "Done. $NAME's password updated, nothing else touched."
+    print_finalize_cmd
+    exit 0
+fi
+
 if [ -n "$EXISTING_PORT" ] && [ -z "$FORCE" ]; then
     print_error "'$NAME' is already in $REGISTRY_FILE on port $EXISTING_PORT. Pass --force to re-provision it."
     exit 1
