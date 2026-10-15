@@ -129,6 +129,8 @@ fi
 
 readonly CURRENT_USER="$(whoami)"
 
+# -noxdamage: XDAMAGE-based screen grabs crash (BadMatch) under some
+# compositing window managers; x11vnc falls back to plain polling without it.
 sudo tee /etc/systemd/system/x11vnc.service > /dev/null << SERVICE
 [Unit]
 Description=x11vnc, serving this user's live X session
@@ -137,7 +139,7 @@ After=graphical.target
 [Service]
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=$HOME/.Xauthority
-ExecStart=/usr/bin/x11vnc -display :0 -auth $HOME/.Xauthority -rfbport $VNC_PORT -forever -shared
+ExecStart=/usr/bin/x11vnc -display :0 -auth $HOME/.Xauthority -rfbport $VNC_PORT -forever -shared -noxdamage
 Restart=always
 RestartSec=5
 User=$CURRENT_USER
