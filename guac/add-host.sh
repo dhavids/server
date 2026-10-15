@@ -1,9 +1,9 @@
 #!/bin/bash
 # Run on the guac-host (as guac), once per client: allocates it a unique
 # forwarded port, provisions a restricted account for it on the VPS (over
-# ssh, via vps/provision-host.sh), and adds its VNC connection to
-# Guacamole. The client itself still needs client.sh run on it, with the
-# port this prints.
+# ssh, via vps/provision-host.sh), and adds its connection to Guacamole
+# (--protocol must match what client.sh --print-key decided). The client
+# itself still needs client.sh run on it, with the port this prints.
 set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,6 +19,7 @@ source "$SCRIPT_DIR/lib.sh"
 
 NAME=""
 PUBKEY=""
+PROTOCOL="vnc"
 VPS_HOST=""
 VPS_ID=""
 VPS_PUBLIC_HOST=""
@@ -38,6 +39,8 @@ Required:
                      content (print it with client.sh's --print-key)
 
 Optional:
+  --protocol vnc|rdp    Must match what client.sh --print-key decided
+                         (default: vnc)
   --vps-host HOST       VPS's Tailscale IP/hostname — reached from here,
                          and the bind address the host's forwarded port
                          gets restricted to (so only the Pi can reach it)
@@ -56,6 +59,15 @@ Optional:
 USAGE
 }
 
+# Prints phase c's exact command, copy-pasteable as-is.
+print_finalize_cmd() {
+    cat << CMD
+On the client, run:
+
+bash guac/client.sh --vps-ssh-host $VPS_PUBLIC_HOST --vps-bind-host $VPS_HOST --vps-user host-$NAME --port $PORT
+CMD
+}
+
 
 # Flag parsing
 
@@ -63,6 +75,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --name) NAME="$2"; shift 2 ;;
         --pubkey) PUBKEY="$2"; shift 2 ;;
+        --protocol) PROTOCOL="$2"; shift 2 ;;
         --vps-host) VPS_HOST="$2"; shift 2 ;;
         -i|--vps-id) VPS_ID="$2"; shift 2 ;;
         --vps-public-host) VPS_PUBLIC_HOST="$2"; shift 2 ;;
@@ -83,6 +96,10 @@ if [ -z "$NAME" ] || [ -z "$PUBKEY" ]; then
 fi
 if [[ ! "$NAME" =~ ^[A-Za-z0-9_-]+$ ]]; then
     print_error "--name must be letters, digits, dashes/underscores only (got: $NAME)"
+    exit 1
+fi
+if [ "$PROTOCOL" != "vnc" ] && [ "$PROTOCOL" != "rdp" ]; then
+    print_error "--protocol must be vnc or rdp (got: $PROTOCOL)"
     exit 1
 fi
 if [ -f "$PUBKEY" ]; then
@@ -134,7 +151,7 @@ ssh -i "$VPS_SSH_KEY" "tunnel@$VPS_HOST" \
 
 if [ -n "$EXISTING_PORT" ]; then
     print_info "Done. $NAME's Guacamole connection already exists, not touching it."
-    print_info "On the host, run client.sh with --vps-ssh-host $VPS_PUBLIC_HOST --vps-bind-host $VPS_HOST --port $PORT --vps-user host-$NAME."
+    print_finalize_cmd
     exit 0
 fi
 
@@ -144,20 +161,25 @@ if [ ! -f "$ENV_FILE" ]; then
 fi
 source "$ENV_FILE"
 
-print_info "Adding $NAME's VNC connection to Guacamole"
+print_info "Adding $NAME's $PROTOCOL connection to Guacamole"
+if [ "$PROTOCOL" = "rdp" ]; then
+    EXTRA_PARAMS="('security', 'any'), ('ignore-cert', 'true')"
+else
+    EXTRA_PARAMS=""
+fi
 PGPASSWORD="$POSTGRES_PASSWORD" docker compose -f "$SCRIPT_DIR/docker-compose.yml" --env-file "$ENV_FILE" \
     exec -T postgres psql -v ON_ERROR_STOP=1 -U guacamole_user -d guacamole_db \
-    -v name="$NAME" -v host="$VPS_HOST" -v port="$PORT" << 'SQL'
+    -v name="$NAME" -v host="$VPS_HOST" -v port="$PORT" -v protocol="$PROTOCOL" << SQL
 WITH new_conn AS (
     INSERT INTO guacamole_connection (connection_name, protocol)
-    VALUES (:'name', 'vnc')
+    VALUES (:'name', :'protocol')
     RETURNING connection_id
 ), params AS (
     INSERT INTO guacamole_connection_parameter (connection_id, parameter_name, parameter_value)
     SELECT connection_id, p.name, p.value
     FROM new_conn, (VALUES
         ('hostname', :'host'),
-        ('port', :'port')
+        ('port', :'port')$([ -n "$EXTRA_PARAMS" ] && echo ", $EXTRA_PARAMS")
     ) AS p(name, value)
 )
 INSERT INTO guacamole_connection_permission (entity_id, connection_id, permission)
@@ -167,4 +189,4 @@ WHERE e.name = 'guacadmin' AND e.type = 'USER';
 SQL
 
 print_info "Done. Guacamole connection '$NAME' -> $VPS_HOST:$PORT created."
-print_info "On the host, run client.sh with --vps-ssh-host $VPS_PUBLIC_HOST --vps-bind-host $VPS_HOST --port $PORT --vps-user host-$NAME."
+print_finalize_cmd

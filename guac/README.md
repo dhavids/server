@@ -94,23 +94,31 @@ and run it there directly:
 bash client.sh --print-key
 ```
 
-Generates the client's dedicated keypair and prints its public half —
-hand that to phase b.
+Decides the protocol here (`--protocol vnc|rdp`, default `vnc`) — not
+re-specified later, so phase c can't drift from what was actually
+checked. `vnc` needs a real X11 session (checked via `$XDG_SESSION_TYPE`
+before anything else happens) since `x11vnc` attaches to the client's own
+live desktop, not a fresh one like `rdp` (`xrdp`) does — if this client is
+on Wayland (Ubuntu's GNOME default), either switch the session to Xorg
+first or re-run with `--protocol rdp`. Generates the client's dedicated
+keypair, records the protocol choice, and prints the public half — hand
+both to phase b.
 
 ### b. Provision — `add-host.sh`
 
 **On the guac-host, as `guac`**:
 
 ```
-sudo bash add-host.sh --name win-desktop --pubkey "ssh-ed25519 AAAA..."
+sudo bash add-host.sh --name win-desktop --pubkey "ssh-ed25519 AAAA..." --protocol vnc
 ```
 
-`--pubkey` is the key phase a printed. Assigns the client a unique
-forwarded port (tracked in `hosts.registry`, starting at `20001`, not
-committed to git), provisions a restricted account for it on the VPS over
-SSH (`vps/provision-host.sh`), and adds its VNC connection straight into
-Guacamole's Postgres DB. Prints back the exact `client.sh` command for
-phase c (`--vps-ssh-host`, `--vps-bind-host`, `--vps-user`, `--port`).
+`--pubkey` is the key phase a printed; `--protocol` must match what it
+decided. Assigns the client a unique forwarded port (tracked in
+`hosts.registry`, starting at `20001`, not committed to git), provisions
+a restricted account for it on the VPS over SSH (`vps/provision-host.sh`),
+and adds its connection straight into Guacamole's Postgres DB. Prints
+back the exact `client.sh` command for phase c (`--vps-ssh-host`,
+`--vps-bind-host`, `--vps-user`, `--port`).
 
 Refuses to re-provision an existing `--name` unless you pass `-f`/`--force`
 — that rotates the client's VPS key but never touches its existing
@@ -124,18 +132,19 @@ Guacamole connection.
 bash client.sh --vps-ssh-host 203.0.113.10 --vps-bind-host 100.x.x.x --vps-user host-win-desktop --port 20001
 ```
 
-Two different VPS addresses, both needed: `--vps-ssh-host` (the VPS's
+No `--protocol` here — it's read back from what phase a recorded. Two
+different VPS addresses, both needed: `--vps-ssh-host` (the VPS's
 **public** IP — the client has no Tailscale, so it's the only address it
 can reach to make the SSH connection) and `--vps-bind-host` (the VPS's
 **Tailscale** IP — the forwarded port's bind address, which `permitlisten`
 restricts it to server-side, so only the guac-host can reach it over the
 tailnet).
 
-Installs `autossh` + `x11vnc` (serving the client's live X session, not a
-fresh one — this is why VNC, not RDP) and two systemd services
-(`x11vnc`, `vps-vnc-tunnel`) forwarding the client's local VNC port
-(`5900` default, `--vnc-port` to override) to its assigned port on the
-VPS. Safe to re-run.
+Installs that protocol's server if missing (`x11vnc` or `xrdp`) and two
+systemd services — the server itself (`x11vnc` only; `xrdp` manages its
+own) and `vps-<protocol>-tunnel`, forwarding the client's local server
+port (`5900` for vnc / `3389` for rdp by default, `--local-port` to
+override) to its assigned port on the VPS. Safe to re-run.
 
 ### Removing a client — `remove-host.sh`
 
@@ -150,9 +159,10 @@ Undoes phases a–c's provisioning: removes `host-win-desktop` on the VPS
 connection, and drops the entry from `hosts.registry`. Prompts for
 confirmation unless `-y`/`--yes` is given.
 
-Doesn't touch the client itself — its `vps-vnc-tunnel` systemd service
-just starts failing to connect once the VPS account is gone. Disable it
-there by hand: `sudo systemctl disable --now vps-vnc-tunnel x11vnc`.
+Doesn't touch the client itself — its `vps-<protocol>-tunnel` systemd
+service just starts failing to connect once the VPS account is gone.
+Disable it there by hand: `sudo systemctl disable --now vps-vnc-tunnel
+x11vnc` (swap in `vps-rdp-tunnel`/`xrdp` if the client used RDP).
 
 ## What restricts a client to just its own port
 
