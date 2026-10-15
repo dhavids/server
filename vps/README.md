@@ -25,8 +25,9 @@ sudo bash setup-ssh.sh -g <you> -i <chars> -e <you@example.com>
 Creates the `tunnel` user (full sudo), authorizes your key (from
 `-k`/`--pubkey`, or fetched from `github.com/<user>.keys` via
 `-g`/`--github-user` + `-i`/`--key-id` or `-e`/`--email` to disambiguate if
-you have more than one key there), confirms key-login actually works, then
-calls `utils/sh/harden.sh` — which disables root/password SSH login.
+you have more than one key there), confirms the key landed in
+`authorized_keys`, then calls `utils/sh/harden.sh` — which disables
+root/password SSH login.
 **After this finishes, disconnect and reconnect as `tunnel`** — don't keep
 using the original root session.
 
@@ -50,6 +51,21 @@ sudo bash ../derp/setup.sh -a
 Both scripts refuse to run unless invoked via `sudo` specifically as
 `tunnel`, and unless `utils/sh/harden.sh`'s `ssh-harden` step has actually
 completed (checked via `/etc/server-hardened`) — see `utils/sh/guard.sh`.
+
+**3. `update.sh`** — run on the VPS (as `tunnel`), typically invoked
+remotely by the Pi over its own SSH key rather than typed in by hand, since
+the Pi already knows its own Tailscale IP:
+
+```
+ssh tunnel@<vps-tailscale-ip> "bash ~/server/vps/update.sh --pi-ip $(tailscale ip -4)"
+```
+
+Writes guac's `cloudflared` ingress fragment on the VPS (guac runs on a
+different box, so it can't write this fragment itself the way `derp`
+does), routes DNS for the subdomain (default `guac-pi`, for testing before
+the real `guac` subdomain is wired up), and reconfigures the shared
+tunnel. No cert dance needed here — guac rides `cloudflared`'s own TLS
+termination.
 
 ## What's deliberately not here
 

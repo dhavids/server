@@ -280,10 +280,10 @@ Then verify from any tailnet device:
   tailscale netcheck        # the custom region should show a real latency
   tailscale ping <peer-ip>  # should show via DERP(custom) once selected
 
-MANUAL STEP: before running --activate, create an A record for $DERP_HOST
-pointing to $vps_ip (DNS-only, not proxied) — certbot's HTTP-01 challenge
-needs that. --activate's route-dns step switches it to the tunnel's
-proxied CNAME automatically once the cert is issued.
+MANUAL STEP: before running --activate, create a DNS-only (not proxied) A record:
+  "$DERP_HOST"
+  "$vps_ip"
+This will be proxied automatically once cert is issued.
 ACL
 }
 
