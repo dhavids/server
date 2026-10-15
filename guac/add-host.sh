@@ -1,8 +1,8 @@
 #!/bin/bash
-# Run on the guac-host (as guac), once per RDP host: allocates it a unique
+# Run on the guac-host (as guac), once per client: allocates it a unique
 # forwarded port, provisions a restricted account for it on the VPS (over
-# ssh, via vps/provision-host.sh), and adds its RDP connection to
-# Guacamole. The host itself still needs client.sh run on it, with the
+# ssh, via vps/provision-host.sh), and adds its VNC connection to
+# Guacamole. The client itself still needs client.sh run on it, with the
 # port this prints.
 set -euo pipefail
 
@@ -144,22 +144,20 @@ if [ ! -f "$ENV_FILE" ]; then
 fi
 source "$ENV_FILE"
 
-print_info "Adding $NAME's RDP connection to Guacamole"
+print_info "Adding $NAME's VNC connection to Guacamole"
 PGPASSWORD="$POSTGRES_PASSWORD" docker compose -f "$SCRIPT_DIR/docker-compose.yml" --env-file "$ENV_FILE" \
     exec -T postgres psql -v ON_ERROR_STOP=1 -U guacamole_user -d guacamole_db \
     -v name="$NAME" -v host="$VPS_HOST" -v port="$PORT" << 'SQL'
 WITH new_conn AS (
     INSERT INTO guacamole_connection (connection_name, protocol)
-    VALUES (:'name', 'rdp')
+    VALUES (:'name', 'vnc')
     RETURNING connection_id
 ), params AS (
     INSERT INTO guacamole_connection_parameter (connection_id, parameter_name, parameter_value)
     SELECT connection_id, p.name, p.value
     FROM new_conn, (VALUES
         ('hostname', :'host'),
-        ('port', :'port'),
-        ('security', 'any'),
-        ('ignore-cert', 'true')
+        ('port', :'port')
     ) AS p(name, value)
 )
 INSERT INTO guacamole_connection_permission (entity_id, connection_id, permission)

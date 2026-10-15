@@ -86,7 +86,7 @@ Re-run `setup.sh -a` once that's done.
 
 ### a. Get the pubkey — `client.sh --print-key`
 
-**On the client (the RDP host)**: not copied anywhere by `setup-ssh.sh` —
+**On the client**: not copied anywhere by `setup-ssh.sh` —
 clone this repo onto it (or just copy this file plus `utils/sh/print.sh`)
 and run it there directly:
 
@@ -108,7 +108,7 @@ sudo bash add-host.sh --name win-desktop --pubkey "ssh-ed25519 AAAA..."
 `--pubkey` is the key phase a printed. Assigns the client a unique
 forwarded port (tracked in `hosts.registry`, starting at `20001`, not
 committed to git), provisions a restricted account for it on the VPS over
-SSH (`vps/provision-host.sh`), and adds its RDP connection straight into
+SSH (`vps/provision-host.sh`), and adds its VNC connection straight into
 Guacamole's Postgres DB. Prints back the exact `client.sh` command for
 phase c (`--vps-ssh-host`, `--vps-bind-host`, `--vps-user`, `--port`).
 
@@ -118,7 +118,7 @@ Guacamole connection.
 
 ### c. Finalize — `client.sh --vps-ssh-host ...`
 
-**Back on the client (the RDP host)**, with the command phase b printed:
+**Back on the client**, with the command phase b printed:
 
 ```
 bash client.sh --vps-ssh-host 203.0.113.10 --vps-bind-host 100.x.x.x --vps-user host-win-desktop --port 20001
@@ -131,9 +131,11 @@ can reach to make the SSH connection) and `--vps-bind-host` (the VPS's
 restricts it to server-side, so only the guac-host can reach it over the
 tailnet).
 
-Installs `autossh` and a systemd service (`vps-rdp-tunnel`) forwarding the
-client's local RDP port (`3389` default, `--rdp-port` to override) to its
-assigned port on the VPS. Safe to re-run.
+Installs `autossh` + `x11vnc` (serving the client's live X session, not a
+fresh one — this is why VNC, not RDP) and two systemd services
+(`x11vnc`, `vps-vnc-tunnel`) forwarding the client's local VNC port
+(`5900` default, `--vnc-port` to override) to its assigned port on the
+VPS. Safe to re-run.
 
 ### Removing a client — `remove-host.sh`
 
@@ -148,9 +150,9 @@ Undoes phases a–c's provisioning: removes `host-win-desktop` on the VPS
 connection, and drops the entry from `hosts.registry`. Prompts for
 confirmation unless `-y`/`--yes` is given.
 
-Doesn't touch the client itself — its `vps-rdp-tunnel` systemd service
+Doesn't touch the client itself — its `vps-vnc-tunnel` systemd service
 just starts failing to connect once the VPS account is gone. Disable it
-there by hand: `sudo systemctl disable --now vps-rdp-tunnel`.
+there by hand: `sudo systemctl disable --now vps-vnc-tunnel x11vnc`.
 
 ## What restricts a client to just its own port
 
