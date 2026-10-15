@@ -98,7 +98,7 @@ confirm "Remove '$NAME' (port $PORT, VPS account host-$NAME, and its Guacamole c
 ensure_vps_ssh_access "$VPS_HOST" || exit 1
 
 print_info "Removing host-$NAME on $VPS_HOST via ssh"
-ssh -i "$VPS_SSH_KEY" "tunnel@$VPS_HOST" \
+ssh -o StrictHostKeyChecking=accept-new -i "$VPS_SSH_KEY" "tunnel@$VPS_HOST" \
     "sudo bash ~/server/vps/deprovision-host.sh --name '$NAME'"
 
 if [ -f "$ENV_FILE" ]; then

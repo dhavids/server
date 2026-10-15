@@ -31,7 +31,7 @@ registry_remove() {
 # the actual source of truth, so two independent guac-hosts never collide.
 # Assumes VPS_SSH_KEY is already set (source utils/sh/vps_ssh.sh first).
 remote_ports() {
-    ssh -i "$VPS_SSH_KEY" "tunnel@$1" "sudo bash ~/server/vps/list-ports.sh"
+    ssh -o StrictHostKeyChecking=accept-new -i "$VPS_SSH_KEY" "tunnel@$1" "sudo bash ~/server/vps/list-ports.sh"
 }
 
 # Prints (stdout) NAME's port on the VPS, or fails if it's not there.

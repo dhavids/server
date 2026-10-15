@@ -180,7 +180,7 @@ guac_connection_exists "$NAME" && HAS_CONNECTION="1"
 if [ -n "$HAS_CONNECTION" ] && [ -z "$FORCE" ]; then
     PORT="$EXISTING_PORT"
     if [ -z "$VPS_PUBLIC_HOST" ]; then
-        VPS_PUBLIC_HOST="$(ssh -i "$VPS_SSH_KEY" "tunnel@$VPS_HOST" "curl -4 -s ifconfig.me")"
+        VPS_PUBLIC_HOST="$(ssh -o StrictHostKeyChecking=accept-new -i "$VPS_SSH_KEY" "tunnel@$VPS_HOST" "curl -4 -s ifconfig.me")"
     fi
     [ -n "$VNC_PASSWORD" ] && update_vnc_password
     print_info "Done. $NAME's Guacamole connection already exists here, not touching it."
@@ -206,7 +206,7 @@ echo "$NAME $PORT" >> "$REGISTRY_FILE"
 # Run
 
 if [ -z "$VPS_PUBLIC_HOST" ]; then
-    VPS_PUBLIC_HOST="$(ssh -i "$VPS_SSH_KEY" "tunnel@$VPS_HOST" "curl -4 -s ifconfig.me")"
+    VPS_PUBLIC_HOST="$(ssh -o StrictHostKeyChecking=accept-new -i "$VPS_SSH_KEY" "tunnel@$VPS_HOST" "curl -4 -s ifconfig.me")"
     if [ -z "$VPS_PUBLIC_HOST" ]; then
         print_error "Couldn't detect the VPS's public IP — pass --vps-public-host"
         exit 1
@@ -214,7 +214,7 @@ if [ -z "$VPS_PUBLIC_HOST" ]; then
 fi
 
 print_info "Provisioning $NAME on $VPS_HOST via ssh"
-ssh -i "$VPS_SSH_KEY" "tunnel@$VPS_HOST" \
+ssh -o StrictHostKeyChecking=accept-new -i "$VPS_SSH_KEY" "tunnel@$VPS_HOST" \
     "sudo bash ~/server/vps/provision-host.sh --name '$NAME' --port '$PORT' --pubkey '$PUBKEY'"
 
 # --force rotates the key above but, if the connection already existed here

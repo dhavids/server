@@ -213,7 +213,7 @@ step_update() {
     [ -n "$SUBDOMAIN" ] && remote_args+=(--subdomain "$SUBDOMAIN")
     [ -n "$GUAC_PORT" ] && remote_args+=(--guac-port "$GUAC_PORT")
     print_info "Running vps/update.sh on $VPS_HOST via ssh"
-    ssh -i "$VPS_SSH_KEY" "tunnel@$VPS_HOST" "sudo bash ~/server/vps/update.sh ${remote_args[*]}"
+    ssh -o StrictHostKeyChecking=accept-new -i "$VPS_SSH_KEY" "tunnel@$VPS_HOST" "sudo bash ~/server/vps/update.sh ${remote_args[*]}"
 }
 
 

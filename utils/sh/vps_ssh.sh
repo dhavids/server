@@ -15,7 +15,7 @@ ensure_vps_ssh_access() {
         print_info "Generated a new SSH key at $VPS_SSH_KEY"
     fi
 
-    if ! ssh -o BatchMode=yes -o ConnectTimeout=5 -i "$VPS_SSH_KEY" "tunnel@$vps_host" "echo ok" &> /dev/null; then
+    if ! ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new -i "$VPS_SSH_KEY" "tunnel@$vps_host" "echo ok" &> /dev/null; then
         cat << INSTR
 On $vps_host, as tunnel, run this then come back and re-run this:
 
