@@ -108,9 +108,13 @@ bash client.sh --print-key
 
 Decides the protocol here (`--protocol vnc|rdp`, default `vnc`) — not
 re-specified later, so phase c can't drift from what was actually
-checked. `vnc` needs a real X11 session (checked via `$XDG_SESSION_TYPE`
-before anything else happens) since `x11vnc` attaches to the client's own
-live desktop, not a fresh one like `rdp` (`xrdp`) does — if this client is
+checked. Safe to re-run any time, e.g. to reprint the same flags for
+registering this client on a second guac-host — it reuses the saved
+key/password/protocol instead of redoing anything, only touching them if
+`--protocol` picks something not yet recorded. `vnc` needs a real X11
+session (checked only the first time, before generating its password)
+since `x11vnc` attaches to the client's own live desktop, not a fresh one
+like `rdp` (`xrdp`) does — if this client is
 on Wayland (Ubuntu's GNOME default), either switch the session to Xorg
 first or re-run with `--protocol rdp`. Generates the client's dedicated
 keypair, records the protocol choice, and — for `vnc` — a password too

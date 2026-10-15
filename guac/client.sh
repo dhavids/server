@@ -45,6 +45,7 @@ VPS_SSH_PORT="22"
 PORT=""
 LOCAL_PORT=""
 PROTOCOL="vnc"
+PROTOCOL_GIVEN=""
 PRINT_KEY=""
 
 
@@ -90,7 +91,7 @@ USAGE
 while [ $# -gt 0 ]; do
     case "$1" in
         --print-key) PRINT_KEY="1"; shift ;;
-        --protocol) PROTOCOL="$2"; shift 2 ;;
+        --protocol) PROTOCOL="$2"; PROTOCOL_GIVEN="1"; shift 2 ;;
         --vps-ssh-host) VPS_SSH_HOST="$2"; shift 2 ;;
         --vps-bind-host) VPS_BIND_HOST="$2"; shift 2 ;;
         --vps-user) VPS_USER="$2"; shift 2 ;;
@@ -113,13 +114,11 @@ fi
 command -v ssh-keygen &> /dev/null || { sudo apt-get update; sudo apt-get install -y openssh-client; }
 
 if [ -n "$PRINT_KEY" ]; then
-    if [ "$PROTOCOL" = "vnc" ] && [ "${XDG_SESSION_TYPE:-}" != "x11" ]; then
-        print_error "--protocol vnc needs a real X11 session (x11vnc can't capture Wayland/XWayland)."
-        print_error "Current session type: ${XDG_SESSION_TYPE:-unknown}."
-        print_error "Either switch this session to Xorg (log out, pick 'Ubuntu on Xorg' at the"
-        print_error "login screen, or set WaylandEnable=false in /etc/gdm3/custom.conf), or"
-        print_error "re-run with --protocol rdp instead."
-        exit 1
+    # No --protocol given: reuse whatever was already decided, not the
+    # vnc default — re-running --print-key should just reprint what's
+    # saved, never silently redecide it.
+    if [ -z "$PROTOCOL_GIVEN" ] && [ -f "$PROTOCOL_FILE" ]; then
+        PROTOCOL="$(cat "$PROTOCOL_FILE")"
     fi
 
     if [ ! -f "$KEY_PATH" ]; then
@@ -131,6 +130,14 @@ if [ -n "$PRINT_KEY" ]; then
     EXTRA_FLAGS=""
     if [ "$PROTOCOL" = "vnc" ]; then
         if [ ! -f "$VNC_PASSWORD_FILE" ]; then
+            if [ "${XDG_SESSION_TYPE:-}" != "x11" ]; then
+                print_error "--protocol vnc needs a real X11 session (x11vnc can't capture Wayland/XWayland)."
+                print_error "Current session type: ${XDG_SESSION_TYPE:-unknown}."
+                print_error "Either switch this session to Xorg (log out, pick 'Ubuntu on Xorg' at the"
+                print_error "login screen, or set WaylandEnable=false in /etc/gdm3/custom.conf), or"
+                print_error "re-run with --protocol rdp instead."
+                exit 1
+            fi
             openssl rand -hex 8 > "$VNC_PASSWORD_FILE"
             chmod 600 "$VNC_PASSWORD_FILE"
             print_info "Generated a VNC password at $VNC_PASSWORD_FILE"
