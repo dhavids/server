@@ -139,9 +139,13 @@ step_ssh_harden() {
     fi
 
     command -v curl &> /dev/null || { apt-get update; apt-get install -y curl; }
-    local host_ip
-    host_ip="$(curl -4 -s ifconfig.me || echo '<could-not-detect-run-curl -4 ifconfig.me-manually>')"
-    confirm "Restart SSH now to apply PermitRootLogin/PasswordAuthentication no? Open a second terminal and confirm $ADMIN_USER@$host_ip still logs in with a key before answering yes." \
+    # Public IP alone is wrong for a box reached over LAN/VPN (e.g. a Pi
+    # behind NAT, with no port forwarded) — list every address it might
+    # actually be reached through and let the admin pick the right one.
+    local public_ip local_ips
+    public_ip="$(curl -4 -s ifconfig.me || echo '<could-not-detect>')"
+    local_ips="$(hostname -I 2> /dev/null || echo '<could-not-detect>')"
+    confirm "Restart SSH now to apply PermitRootLogin/PasswordAuthentication no? Open a second terminal and confirm $ADMIN_USER@<ip> still logs in with a key before answering yes — use whichever of these you're actually connected through: $local_ips (local), $public_ip (public)." \
         || { print_warn "sshd_config edited. SSH not restarted."; return; }
 
     systemctl restart ssh

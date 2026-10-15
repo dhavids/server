@@ -16,6 +16,18 @@ natively — no Docker, no containers. Run first, before `derp/` or
 | 5 | `provision-host.sh` | VPS | `tunnel`, invoked from the guac-host |
 | 6 | `deprovision-host.sh` | VPS | `tunnel`, invoked from the guac-host |
 
+On a fresh box, update and reboot first:
+
+```
+sudo apt update && sudo apt upgrade -y && sudo reboot
+```
+
+Skipping this can make `openssh-server` fail its postinstall restart
+(`systemd`/kernel upgrading in the same transaction — a known Debian/Ubuntu
+race). If it happens and `sudo systemctl daemon-reload && sudo dpkg
+--configure -a` doesn't fix it, retry from the box's keyboard/monitor, not
+SSH — the old sshd can be left holding port 22.
+
 ### 1. `setup-ssh.sh` — once, as `root`
 
 ```
