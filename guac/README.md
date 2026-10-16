@@ -64,6 +64,10 @@ binds to the guac-host's **Tailscale IP** specifically — not `127.0.0.1`
 (the VPS's `cloudflared` reaches it over the tailnet, from a different
 box) and not `0.0.0.0` (Docker's published ports bypass `ufw`).
 
+Log in at `guacadmin`/`guacadmin` and change it immediately — `guacadmin`
+can't change its own password, only another admin's, so create a second
+admin user first and do it from there.
+
 ### 3. `setup.sh -a` — as `guac`, once the VPS is reachable over the tailnet
 
 ```
