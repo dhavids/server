@@ -1,12 +1,18 @@
 #!/bin/bash
 # Run on a client (the machine whose screen you want to see), as a normal
-# sudo user. Two phases:
+# sudo user. Three modes:
 #   1. --print-key [--protocol vnc|rdp]: decides the protocol (default
 #      vnc), checks it's actually usable here, generates this client's
 #      dedicated keypair, records the choice, and prints the pubkey to
 #      hand to guac/add-host.sh --pubkey --protocol <same> (run on the
 #      guac-host).
-#   2. The default run: installs that protocol's server (x11vnc or xrdp)
+#   2. --set-password PASS: records this client's VNC password — what
+#      --print-key hands to add-host.sh --vnc-password. Doesn't touch any
+#      running x11vnc; re-run the finalize command (mode 3) to actually
+#      apply it there. Also how to bring an x11vnc that predates this
+#      script, or that client.sh only reused rather than installed, under
+#      the same tracking.
+#   3. The default run: installs that protocol's server (x11vnc or xrdp)
 #      if missing, and a systemd service that keeps a reverse tunnel
 #      open, forwarding its port to the port guac/add-host.sh assigned on
 #      the VPS. Needs --vps-ssh-host, --vps-bind-host, --vps-user, and
@@ -47,6 +53,7 @@ LOCAL_PORT=""
 PROTOCOL="vnc"
 PROTOCOL_GIVEN=""
 PRINT_KEY=""
+SET_PASSWORD=""
 
 
 # Usage
@@ -54,6 +61,7 @@ PRINT_KEY=""
 usage() {
     cat << 'USAGE'
 Usage: bash client.sh --print-key [--protocol vnc|rdp]
+       bash client.sh --set-password PASS
        bash client.sh --vps-ssh-host HOST --vps-bind-host HOST --vps-user USER --port PORT [options]
 
 --print-key: checks --protocol is usable here, generates (if needed) this
@@ -65,6 +73,13 @@ the guac-host, which assigns --port and --vps-user and prints the
 Once you have those, run again without --print-key to install that
 protocol's server and the reverse tunnel. The protocol itself isn't
 re-specified here — it's whatever --print-key already decided.
+
+--set-password: stores PASS as this client's recorded VNC password (what
+--print-key hands to add-host.sh --vnc-password). Doesn't touch any
+running x11vnc — re-run without --print-key/--set-password to apply it to
+one client.sh installed. To bring an already-running x11vnc (set up
+before this existed, or outside client.sh entirely) under the same
+--print-key-reprintable tracking, pass its actual current password here.
 
 Required:
   --vps-ssh-host HOST   VPS's public IP/hostname — this client has no
@@ -91,6 +106,7 @@ USAGE
 while [ $# -gt 0 ]; do
     case "$1" in
         --print-key) PRINT_KEY="1"; shift ;;
+        --set-password) SET_PASSWORD="$2"; shift 2 ;;
         --protocol) PROTOCOL="$2"; PROTOCOL_GIVEN="1"; shift 2 ;;
         --vps-ssh-host) VPS_SSH_HOST="$2"; shift 2 ;;
         --vps-bind-host) VPS_BIND_HOST="$2"; shift 2 ;;
@@ -110,6 +126,18 @@ fi
 
 
 # Run
+
+if [ -n "$SET_PASSWORD" ]; then
+    if [ -f "$PROTOCOL_FILE" ] && [ "$(cat "$PROTOCOL_FILE")" != "vnc" ]; then
+        print_error "This client is set up for rdp, not vnc — --set-password only applies to vnc"
+        exit 1
+    fi
+    echo "$SET_PASSWORD" > "$VNC_PASSWORD_FILE"
+    chmod 600 "$VNC_PASSWORD_FILE"
+    print_info "Stored the VNC password at $VNC_PASSWORD_FILE"
+    print_info "Doesn't touch any running x11vnc — re-run the finalize command to apply it there, and --print-key for the updated --vnc-password flag"
+    exit 0
+fi
 
 command -v ssh-keygen &> /dev/null || { sudo apt-get update; sudo apt-get install -y openssh-client; }
 

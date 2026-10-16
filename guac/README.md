@@ -126,6 +126,14 @@ keypair, records the protocol choice, and — for `vnc` — a password too
 flags fragment (`--pubkey ... --protocol ... --vnc-password ...`) to
 append onto phase b's `add-host.sh --name ... --vps-host ...`.
 
+To change the password later (or to make it reprintable at all, for an
+x11vnc that predates `client.sh` or that it only reused rather than
+installed): `bash client.sh --set-password NEWPASS`. Only updates the
+record `--print-key` reprints — doesn't touch any running x11vnc. Set the
+server's own password to match separately (e.g. `x11vnc -storepasswd`, or
+re-run phase c if `client.sh` installed it) and update the password on
+every guac-host registered for this client (`add-host.sh --vnc-password`).
+
 ### b. Provision — `add-host.sh`
 
 **On the guac-host, as `guac`**:
